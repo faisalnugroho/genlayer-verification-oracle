@@ -141,14 +141,18 @@ def main():
     init_db(conn)
     account = create_account()
     client = create_client(chain=studionet, account=account)
-    log(f"indexing contract {GVO_ADDRESS} every {POLL_SECONDS}s")
+
+    oneshot = os.environ.get("ONESHOT", "0") == "1"
+    log(f"indexing contract {GVO_ADDRESS} every {POLL_SECONDS}s (oneshot={oneshot})")
     while True:
         try:
             claims, stats = fetch_snapshot(client)
             n = upsert(conn, claims, stats)
-            log(f"mirrored {n} claims")
+            log(f"mirrored {n} claims; stats={str(stats)[:120]}")
         except Exception as e:
             log(f"poll error: {e}")
+        if oneshot:
+            break
         time.sleep(POLL_SECONDS)
 
 

@@ -78,8 +78,13 @@ def get_claim(claim_id: int):
 @app.get("/api/v1/stats")
 def stats():
     conn = get_conn()
-    row = conn.execute("SELECT data FROM stats WHERE id = 1").fetchone()
+    row = conn.execute("SELECT data, updated_at FROM stats WHERE id = 1").fetchone()
     conn.close()
     if not row:
         return {"data": {}, "updated_at": None}
-    return {"data": json.loads(row["data"]), "updated_at": None}
+    return {"data": json.loads(row["data"]), "updated_at": row["updated_at"]}
+
+
+@app.get("/api/v1/gvo_address")
+def gvo_address():
+    return {"address": GVO_ADDRESS}
