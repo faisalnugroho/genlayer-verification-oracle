@@ -1,72 +1,147 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>GVO — GenLayer Verification Oracle</title>
 <style>
-  body{font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#111;background:#f7f7f8}
-  h1{font-size:1.6rem}
-  a{color:#2563eb}
-  table{border-collapse:collapse;width:100%;margin:1rem 0}
-  th,td{border:1px solid #ddd;padding:.5rem;text-align:left;font-size:.9rem}
-  .pill{display:inline-block;padding:.2rem .6rem;border-radius:999px;font-size:.75rem;background:#e0e7ff;color:#111}
-  label{display:block;margin:.5rem 0 .25rem;font-weight:600}
-  input,textarea{width:100%;padding:.5rem;margin-bottom:.75rem;box-sizing:border-box}
-  button{background:#111;color:#fff;border:none;padding:.6rem 1rem;cursor:pointer;border-radius:6px}
-  code{background:#eee;padding:0 .3rem;border-radius:4px}
+  :root { --bg:#0b0f14; --card:#11161d; --border:#1f2833; --text:#e6edf3; --muted:#8b98a5; --accent:#2dd4a7; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px; }
+  header { padding:32px 0 8px; }
+  h1 { font-size:30px; margin:0; letter-spacing:-.3px; }
+  .sub { color:var(--muted); margin:6px 0 0; }
+  .addr { font-family:ui-monospace,Menlo,monospace; font-size:13px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin:20px 0; }
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:20px 0; }
+  .metric { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .metric .k { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .metric .v { font-size:22px; font-weight:650; margin-top:4px; word-break:break-all; }
+  section { margin:34px 0; }
+  h2 { font-size:20px; margin:0 0 12px; border-bottom:1px solid var(--border); padding-bottom:10px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:13px; }
+  .pill { display:inline-block; padding:1px 10px; border-radius:999px; font-size:12px; background:rgba(255,255,255,.07); }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; background:rgba(255,255,255,.05); padding:1px 6px; border-radius:4px; }
+  .note { color:var(--muted); font-size:13px; margin:8px 0; }
+  a { color:var(--accent); }
+  form { display:grid; gap:10px; max-width:660px; }
+  input { background:#0e131a; border:1px solid var(--border); border-radius:6px; padding:9px 12px; color:var(--text); font-size:14px; }
+  button { background:var(--accent); color:#04110c; border:none; border-radius:6px; padding:11px 16px; font-weight:700; cursor:pointer; width:max-content; }
+  .err { color:#ff5c5c; }
 </style>
 </head>
 <body>
-<h1>GVO — GenLayer Verification Oracle</h1>
-<p>
-  A single, reusable <strong>Intelligent Contract</strong> on GenLayer Studionet that any
-  contract (or human) can call to get a validator-consensus verdict on a claim vs. stated
-  criteria.
-</p>
-<p>
-  Contract address:
-  <code id="addr">0x19a4F04C987C35f4a231305429A2453e6Fe717F5</code>
-</p>
-<h2>Submit a claim</h2>
-<form id="f">
-  <label>Category (free string)</label>
-  <input name="category" placeholder="e.g. x402-dispute, escrow-delivery">
-  <label>Description</label>
-  <input name="description" placeholder="What is being claimed">
-  <label>Criteria</label>
-  <textarea name="criteria" rows="2" placeholder="What counts as satisfying the claim"></textarea>
-  <label>Evidence URL</label>
-  <input name="evidence_url" placeholder="Public, ideally immutable URL to verify">
-  <button type="submit">Submit claim</button>
-</form>
+<div class="wrap">
+<header>
+  <h1>GVO — GenLayer Verification Oracle</h1>
+  <p class="sub">A shared Intelligent Contract. Post a claim once; any contract reads the verdict.</p>
+</header>
+
+<div class="addr" id="contractAddr"></div>
+
+<div class="metrics" id="metrics">
+  <div class="metric"><div class="k">live claims</div><div class="v" id="m_claim_count">…</div></div>
+  <div class="metric"><div class="k">resolved</div><div class="v" id="m_total_resolved">…</div></div>
+  <div class="metric"><div class="k">appeals</div><div class="v" id="m_total_appeals">…</div></div>
+  <div class="metric"><div class="k">approval %</div><div class="v" id="m_approval_rate">…</div></div>
+</div>
+
+<section>
+  <h2>New claim</h2>
+  <p class="note">Write goes directly on-chain; this page is read-side. For a live demo, write in via a backend that holds GEN and relays — this is documented in README. Refer page.</p>
+  <form id="newClaim">
+    <label>category <input name="category" placeholder="x402-dispute" ></label>
+    <label>description <input name="description" placeholder="state the claim" ></label>
+    <label>criteria <input name="criteria" placeholder="what counts as satisfying the claim" ></label>
+    <label>evidence_url <input name="evidence_url" placeholder="public, ideally immutable URL" ></label>
+    <button type="submit">Post claim</button>
+  </form>
+</section>
+
 <h2>Browse claims</h2>
-<p id="status">Loading…</p>
-<table id="tbl"></table>
+<p class="note" id="claimsStatus">Loading…</p>
+<table id="claimsTable"><thead><tr><th>ID</th><th>Category</th><th>Status</th><th>Verdict</th><th>Description</th></tr></thead><tbody></tbody></table>
+<p class="note" id="req">…</p>
+</div>
+
 <script>
-  const API = "http://127.0.0.1:8000";
-  const GVO = "0x19a4F04C987C35f4a231305429A2453e6Fe717F5";
-  async function load() {
-    const r = await fetch(API + "/api/v1/claims?page_size=200");
-    const j = await r.json();
-    const rows = j.claims || [];
-    let html = "<tr><th>ID</th><th>Category</th><th>Status</th><th>Verdict</th><th>Description</th></tr>";
-    for (const c of rows) {
-      html += `<tr><td>${c.claim_id}</td><td>${c.category}</td><td><span class="pill">${c.status}</span></td><td>${c.verdict}</td><td>${c.description}</td></tr>`;
-    }
-    document.getElementById("tbl").innerHTML = html;
-    document.getElementById("status").textContent = `${rows.length} claims loaded`;
+const GVO_ADDRESS = "0x19a4F04C987C35f4a231305429A2453e6Fe717F5";
+const API_BASE = window.__config__?.apiBase ??
+  (location.protocol === "file:" ? "http://127.0.0.1:8000" : "");
+
+document.getElementById("contractAddr").textContent = "Smart Contract (live): " + GVO_ADDRESS;
+
+function setMetric(id, v) {
+  const el = document.getElementById(id);
+  el.textContent = String(v ?? "—");
+  el.style.fontSize = "20px";
+  el.style.fontWeight = "650";
+  el.style.marginTop = "4px";
+}
+
+async function getJSON(p) {
+  const r = await fetch(API_BASE + p);
+  if (!r.ok) throw new Error(p + " -> " + r.status);
+  return r.json();
+}
+
+async function load() {
+  try {
+    const r = await getJSON("/api/v1/stats");
+    const s = r.data || {};
+    setMetric("m_claim_count", s.total_claims);
+    setMetric("m_total_resolved", s.total_resolved);
+    setMetric("m_total_appeals", s.total_appeals);
+    setMetric("m_approval_rate", s.approval_rate);
+  } catch (e) {
+    setMetric("m_claim_count", "offline");
+    setMetric("m_total_resolved", "—");
+    setMetric("m_total_appeals", "—");
+    setMetric("m_approval_rate", "—");
+    document.getElementById("contractAddr").textContent =
+      "backend offline — data not loaded (error: " + e.message + ")";
+    document.getElementById("claimsStatus").textContent = "backend not reachable";
+    return;
   }
-  load();
-  document.getElementById("f").addEventListener("submit", async (e) => {
+
+  try {
+    const r = await getJSON("/api/v1/claims?page_size=200");
+    const rows = r.claims || [];
+    const tb = document.querySelector("#claimsTable tbody");
+    tb.innerHTML = "";
+    rows.forEach(function (c) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${c.claim_id}</td><td>${c.category}</td><td><span class="pill">${c.status}</span></td><td>${c.verdict}</td><td>${c.description}</td>`;
+      tb.appendChild(tr);
+    });
+    document.getElementById("claimsStatus").textContent = `${rows.length} claims loaded`;
+  } catch (e) {
+    document.getElementById("claimsStatus").textContent =
+      "claims error: " + e.message;
+  }
+
+  document.getElementById("newClaim").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const body = Object.fromEntries(fd.entries());
-    // On a real frontend, this posts to the GenLayer proxy which relays to the chain.
-    // For this static demo, we just show the payload.
-    document.getElementById("status").textContent =
-      "Would submit: " + JSON.stringify(body) + " -> GVO_ADDRESS " + GVO;
+    const {category, description, criteria, evidence_url} = Object.fromEntries(fd.entries());
+    try {
+      const resp = await fetch(API_BASE + "/api/v1/relay/submit", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({args:[category, description, criteria, evidence_url]}),
+      });
+      if (!resp.ok) throw new Error(String(resp.status));
+      document.getElementById("claimsStatus").textContent =
+        "claim posted → waiting for consensus → then relocation";
+      setTimeout(load, 5000);
+    } catch (err) {
+      document.getElementById("req").textContent = "submit failed: " + err.message;
+    }
   });
+}
+load();
 </script>
 </body>
 </html>
