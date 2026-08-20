@@ -11,7 +11,7 @@ json.loads it and compare the STRING verdict (it is not a native bool).
 from genlayer import *
 import json
 
-GVO_ADDRESS = "0x19a4F04C987C35f4a231305429A2453e6Fe717F5"
+GVO_ADDRESS = "0x184C7F56a0183b37f2ceC88F589C8D856082c915"
 
 
 class EscrowGatedByGVO(gl.Contract):

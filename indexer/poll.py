@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from genlayer_py import create_account, create_client, studionet
 
 ENV = os.environ
-GVO_ADDRESS = ENV.get("GVO_ADDRESS", "0x19a4F04C987C35f4a231305429A2453e6Fe717F5")
+GVO_ADDRESS = ENV.get("GVO_ADDRESS", "0x184C7F56a0183b37f2ceC88F589C8D856082c915")
 DB_PATH = ENV.get("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "gvo.db"))
 POLL_SECONDS = int(ENV.get("POLL_SECONDS", "10"))
 

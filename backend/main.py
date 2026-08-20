@@ -14,7 +14,7 @@ DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "gvo.db"
 ))
 GVO_ADDRESS = os.environ.get(
-    "GVO_ADDRESS", "0x19a4F04C987C35f4a231305429A2453e6Fe717F5"
+    "GVO_ADDRESS", "0x184C7F56a0183b37f2ceC88F589C8D856082c915"
 )
 
 app = FastAPI(title="GVO API", version="1.0.0")
