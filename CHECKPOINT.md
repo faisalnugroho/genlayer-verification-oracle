@@ -6,11 +6,13 @@ LOCAL DIR: ~/gvo
 SMART CONTRACT (Studionet, LIVE): 0x184C7F56a0183b37f2ceC88F589C8D856082c915
 Chain id: 61999 · RPC: https://studio.genlayer.com/api · GEN 18 decimals
 
-GIT (6 commits before the redeploy commit, all pushed):
+GIT (commits pushed):
   f56af4b  initial release
   b17e546  add CHECKPOINT.md
   ffaf696  fix backend stats query + gvo_address endpoint; indexer oneshot mode
   02d950f  clean web/index.html frontend
+  d2aa8d7  update CHECKPOINT
+  2d3e963  redeploy: fix approval_rate determinism, address -> 0x184C7F56...82c915
 
 NEW CONTRACT LIVE STATE (redeployed with integer math):
   total_claims=1, total_resolved=1, total_appeals=0
