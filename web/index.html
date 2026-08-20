@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GVO — GenLayer Verification Oracle</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#111;background:#f7f7f8}
+  h1{font-size:1.6rem}
+  a{color:#2563eb}
+  table{border-collapse:collapse;width:100%;margin:1rem 0}
+  th,td{border:1px solid #ddd;padding:.5rem;text-align:left;font-size:.9rem}
+  .pill{display:inline-block;padding:.2rem .6rem;border-radius:999px;font-size:.75rem;background:#e0e7ff;color:#111}
+  label{display:block;margin:.5rem 0 .25rem;font-weight:600}
+  input,textarea{width:100%;padding:.5rem;margin-bottom:.75rem;box-sizing:border-box}
+  button{background:#111;color:#fff;border:none;padding:.6rem 1rem;cursor:pointer;border-radius:6px}
+  code{background:#eee;padding:0 .3rem;border-radius:4px}
+</style>
+</head>
+<body>
+<h1>GVO — GenLayer Verification Oracle</h1>
+<p>
+  A single, reusable <strong>Intelligent Contract</strong> on GenLayer Studionet that any
+  contract (or human) can call to get a validator-consensus verdict on a claim vs. stated
+  criteria.
+</p>
+<p>
+  Contract address:
+  <code id="addr">0x19a4F04C987C35f4a231305429A2453e6Fe717F5</code>
+</p>
+<h2>Submit a claim</h2>
+<form id="f">
+  <label>Category (free string)</label>
+  <input name="category" placeholder="e.g. x402-dispute, escrow-delivery">
+  <label>Description</label>
+  <input name="description" placeholder="What is being claimed">
+  <label>Criteria</label>
+  <textarea name="criteria" rows="2" placeholder="What counts as satisfying the claim"></textarea>
+  <label>Evidence URL</label>
+  <input name="evidence_url" placeholder="Public, ideally immutable URL to verify">
+  <button type="submit">Submit claim</button>
+</form>
+<h2>Browse claims</h2>
+<p id="status">Loading…</p>
+<table id="tbl"></table>
+<script>
+  const API = "http://127.0.0.1:8000";
+  const GVO = "0x19a4F04C987C35f4a231305429A2453e6Fe717F5";
+  async function load() {
+    const r = await fetch(API + "/api/v1/claims?page_size=200");
+    const j = await r.json();
+    const rows = j.claims || [];
+    let html = "<tr><th>ID</th><th>Category</th><th>Status</th><th>Verdict</th><th>Description</th></tr>";
+    for (const c of rows) {
+      html += `<tr><td>${c.claim_id}</td><td>${c.category}</td><td><span class="pill">${c.status}</span></td><td>${c.verdict}</td><td>${c.description}</td></tr>`;
+    }
+    document.getElementById("tbl").innerHTML = html;
+    document.getElementById("status").textContent = `${rows.length} claims loaded`;
+  }
+  load();
+  document.getElementById("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    // On a real frontend, this posts to the GenLayer proxy which relays to the chain.
+    // For this static demo, we just show the payload.
+    document.getElementById("status").textContent =
+      "Would submit: " + JSON.stringify(body) + " -> GVO_ADDRESS " + GVO;
+  });
+</script>
+</body>
+</html>

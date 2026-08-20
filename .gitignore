@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+artifacts/
+gvo.db
+*.db
+.env
+venv/
+env/
