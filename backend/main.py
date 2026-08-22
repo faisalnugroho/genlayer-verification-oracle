@@ -30,7 +30,7 @@ DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "gvo.db"
 ))
 GVO_ADDRESS = os.environ.get(
-    "GVO_ADDRESS", "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4"
+    "GVO_ADDRESS", "0xE6f6C5130452312A83eB32883fe223271EF2517B"
 )
 
 # ---------------------------------------------------------------------------

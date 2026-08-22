@@ -68,7 +68,10 @@ def main():
         log(f"fund_account note: {e}")
 
     log("Deploying (full consensus)...")
-    tx_hash = client.deploy_contract(code=code, account=account, args=[0, 100], leader_only=False)
+    # Constructor: min_appeal_stake=0 (no minimum), appeal_window_seconds=3600
+    # (1-hour wall-clock appeal window, enforced against the node-assigned
+    # transaction timestamp — see contract docstring).
+    tx_hash = client.deploy_contract(code=code, account=account, args=[0, 3600], leader_only=False)
     log(f"Deploy tx hash: {tx_hash}")
     receipt = client.wait_for_transaction_receipt(
         transaction_hash=tx_hash, status=TransactionStatus.ACCEPTED,
@@ -159,6 +162,25 @@ def main():
         log("resolve FAILED — trace:"); log(json.dumps(client.debug_trace_transaction(tx), indent=2)[:4000]); sys.exit(1)
     resolved = client.read_contract(address=addr, function_name="get_claim", args=[3])
     log("claim 3 (wrong amount): " + json.dumps(resolved, indent=2))
+
+    # ── finalize_claim guard check (window still open -> must revert) ──
+    # Right after resolution the 3600s appeal window is open, so finalize_claim
+    # MUST fail. A revert here is the EXPECTED, correct behaviour and proves the
+    # time-based finalization guard is live. We do not abort on this failure.
+    log("\n--- finalize_claim (expected REVERT: appeal window still open) ---")
+    try:
+        tx = client.write_contract(address=addr, function_name="finalize_claim", account=account, args=[2])
+        r = client.wait_for_transaction_receipt(transaction_hash=tx, status=TransactionStatus.ACCEPTED, interval=5000, retries=80, full_transaction=True)
+        fin_ok = ok(r)
+        log(f"finalize_claim(2) exec_ok={fin_ok} (False/revert is EXPECTED here)")
+        if fin_ok:
+            log("WARNING: finalize succeeded while window open — guard may be broken!")
+        else:
+            lr = (r.get("consensus_data", {}).get("leader_receipt") or [{}])
+            g = lr[0].get("genvm_result", {}) if lr else {}
+            log(f"  expected revert stderr: {str(g.get('stderr'))[:200]}")
+    except Exception as e:
+        log(f"finalize_claim reverted as expected: {e}")
 
     log("\n--- final get_stats ---")
     stats = client.read_contract(address=addr, function_name="get_stats", raw_return=False)

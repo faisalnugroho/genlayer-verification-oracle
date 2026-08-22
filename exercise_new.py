@@ -7,7 +7,7 @@ import sys
 from genlayer_py import create_account, create_client, studionet
 from genlayer_py.types import TransactionStatus
 
-ADDR = sys.argv[1] if len(sys.argv) > 1 else "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4"
+ADDR = sys.argv[1] if len(sys.argv) > 1 else "0xE6f6C5130452312A83eB32883fe223271EF2517B"
 
 REAL_BASE_TX = "0xa04ee1a7b7f0573703dffd46445a43e9552bbc9713848056786956c50b8ef29e"
 REAL_PAYER = "0x498581ff718922c3f8e6a244956af099b2652b2b"

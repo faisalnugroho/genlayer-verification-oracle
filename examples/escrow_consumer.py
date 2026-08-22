@@ -7,11 +7,18 @@ embedding its own AI-judgment logic.
 NOTE on the GVO interface: GVO.get_verdict(claim_id) is a @view returning a JSON
 string shaped like '{"verdict": "true", "status": "final"}'. This consumer must
 json.loads it and compare the STRING verdict (it is not a native bool).
+
+CONSUMER CONTRACT (round-2 steward requirement): act ONLY when status == "final".
+  - "resolved" means the appeal window may still be open — NOT safe to act on.
+    Anyone can call GVO.finalize_claim(claim_id) once the window has passed,
+    which moves the claim to "final".
+  - "final" means the verdict is immutable — safe to act on. Reached either by
+    resolve_appeal() (contested) or finalize_claim() (uncontested).
 """
 from genlayer import *
 import json
 
-GVO_ADDRESS = "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4"
+GVO_ADDRESS = "0xE6f6C5130452312A83eB32883fe223271EF2517B"
 
 
 class EscrowGatedByGVO(gl.Contract):
@@ -59,8 +66,10 @@ class EscrowGatedByGVO(gl.Contract):
 
         e["status"] = "released"
         self.escrows[key] = json.dumps(e)
-        # On Studionet, actual GEN movement is unreliable; model the release in
-        # storage (see GVO project README for the same documented limitation).
+        # Real transfer: pay the beneficiary via the SDK's message-based value
+        # transfer (emit_transfer, on="finalized"). Bookkeeping is cleared above
+        # BEFORE the transfer is emitted (checks-effects-interactions).
+        gl.get_contract_at(Address(e["beneficiary"])).emit_transfer(value=u256(int(e["amount"])))
         return True
 
     @gl.public.view

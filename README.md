@@ -40,7 +40,7 @@ proposals — can read that verdict instead of building their own judgment layer
 ## Deployed (LIVE on Studionet)
 
 - **Chain:** GenLayer Studionet (chain id `61999`, RPC `https://studio.genlayer.com/api`)
-- **Contract:** `0x9865948Aa5170C50F4B73bf47706C8A09f7135d4`
+- **Contract:** `0xE6f6C5130452312A83eB32883fe223271EF2517B`
 
 ## How GVO works
 
@@ -105,20 +105,56 @@ If someone disputes a verdict, they can stake GEN to re-run the judgment. If
 the verdict flips, the stake is refundable; if it holds, the stake is forfeited
 and split 50/50 between the origin resolver and the contract treasury.
 
+**The appeal window is a wall-clock deadline** (constructor param
+`appeal_window_seconds`, default **3600 s = 1 hour**). The clock source is
+`gl.message_raw["datetime"]` — the transaction timestamp assigned by the GenVM
+node at execution time. It is **not** client-supplied, so it cannot be
+manipulated: submitting throwaway claims does not shift anyone's deadline.
+
+### 4. Finalization
+
+An uncontested claim stays `resolved` until the appeal window has passed; then
+**anyone** can call `finalize_claim(claim_id)` to move it to `final`.
+
+**Consumer contract:** only act when `get_verdict()` returns
+`status == "final"`. `"resolved"` means the appeal window may still be open
+and the verdict can still change.
+
+### 5. Real value transfers
+
+Stake refunds and rewards are paid out as **real GEN transfers** via the SDK's
+message-based primitive `emit_transfer(value=..., on="finalized")` (the
+sanctioned replacement for the old, unsupported `gl.transfer`):
+
+- `withdraw_stake(claim_id)` — appellant pulls a refundable stake after a
+  successful appeal.
+- `withdraw_reward()` — resolver pulls their accrued reward balance (earned
+  when an appeal is held).
+- `withdraw_treasury()` — owner pulls the treasury's forfeited-stake share.
+
+All three clear their bookkeeping **before** emitting the transfer
+(checks-effects-interactions).
+
 ## Verified
 
-- `tests/test_gvo.py` (direct mode, genlayer-test 0.29.2): **15 passed**, including:
+- `tests/test_gvo.py` (direct mode, genlayer-test 0.29.2): **24 passed**, including:
   - USDC verification **approves** a claim whose stated payer/recipient/amount
     match the mocked on-chain transfer
   - USDC verification **rejects** claims with wrong amount, wrong payer, wrong
     recipient, nonexistent tx, non-USDC token, or insufficient confirmations
   - USDC verification matches the correct transfer among multiple Transfer
     events in one tx (real-world DeFi route case)
+  - `finalize_claim` happy path + assert-fails-before-deadline
+  - `withdraw_stake` / `withdraw_reward` / `withdraw_treasury` perform REAL
+    transfers (balance-delta assertions, not just storage flags)
+  - appeal deadline is time-based and NOT shifted by claim spam
+  - verdict parsing rejects the string `"false"` (truthy-string regression)
 - `genvm-lint check contracts/gvo.py --json`: `ok=true` (lint 3 passed,
-  validate: 11 methods, 6 view, 5 write)
+  validate: 14 methods, 6 view, 8 write)
 - Live Studionet exercise (see `deploy_gvo.py`): evidence-only claim +
   USDC matching claim + USDC wrong-amount claim, resolved end-to-end against
-  real Base chain data.
+  real Base chain data, plus a live `finalize_claim` guard check (reverts
+  while the appeal window is open, as required).
 
 ## Running the tests
 
@@ -163,14 +199,19 @@ contract — the browser never holds a key or talks to RPC directly.
 - **Base RPC availability (Path B):** payment verification depends on the
   public Base RPC endpoint. If it is unreachable, the gate fails closed
   (verdict false) — we never approve a payment we cannot verify.
-- **Appeal window** is measured in "claim-counter units", not wall-clock
-  seconds, because the GenVM SDK exposes no reliable block-timestamp primitive
-  to contract code.
-- **Forfeited stakes** are accounted in storage rather than transferred,
-  because on-chain transfers are unreliable on Studionet. The treasury/resolver
-  can withdraw explicitly.
-- On-chain transfer of funds (escrow) is not part of v1 — GVO holds no funds
-  itself; it's a judgment layer only.
+- **Appeal window clock:** measured in wall-clock seconds against
+  `gl.message_raw["datetime"]` (node-assigned transaction timestamp). This is
+  the non-manipulable primitive GenVM v0.2.16 exposes — there is no
+  `gl.block.timestamp`; the datetime is set by the executing node, not the
+  client. Platform caveat: if the node ever failed to assign a timestamp the
+  parse would revert (fail closed), never silently approve.
+- **Value transfers:** `emit_transfer` emits a child value message
+  (`on="finalized"`). Platform caveat: if the child transaction fails, value
+  is not auto-returned to the contract; withdrawals therefore clear
+  bookkeeping before emitting (checks-effects-interactions).
+- On-chain escrow of claim funds is not part of v1 — GVO holds appeal stakes
+  and pays refunds/rewards, but does not escrow the disputed amounts
+  themselves; it's a judgment layer.
 
 ## License
 

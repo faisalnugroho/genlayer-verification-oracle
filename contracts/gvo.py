@@ -49,13 +49,19 @@ Known limitations (documented honestly):
 - Evidence URL trust: GVO fetches whatever URL is supplied. It cannot detect that
   the content changed after submission. Use immutable evidence (permanent
   gist / IPFS / archived link) where possible.
-- Appeal window is measured in "claim-counter units", not wall-clock seconds, because
-  the current GenVM SDK exposes no reliable block-timestamp primitive to contract
-  code. Each new claim submission advances the counter; an appeal is allowed only
-  while (counter at resolution + appeal_window) >= current counter.
-- Forfeited appeal stakes are not moved with emit_transfer on Studionet (value
-  transfers are unreliable there); they are accounted in storage and withdrawing
-  is left as explicit steps for transparency.
+- Appeal window is measured in wall-clock seconds. The clock source is
+  gl.message_raw["datetime"] — the transaction timestamp assigned by the
+  GenVM node at execution time. It is NOT supplied by the caller (the client
+  transaction carries no datetime field), so it cannot be manipulated by
+  submitting throwaway claims or crafting special transactions. A claim may be
+  appealed only while (now - resolved_at_timestamp) <= appeal_window_seconds.
+- Value transfers use the SDK's message-based primitive
+  gl.get_contract_at(addr).emit_transfer(value=...) with on="finalized" (the
+  sanctioned replacement for the old, unsupported gl.transfer). withdraw_stake,
+  withdraw_reward and withdraw_treasury perform real transfers. Note the
+  platform caveat: an emitted transfer is a child message — if the child
+  transaction fails, value is not auto-returned; withdrawals clear bookkeeping
+  before emitting (checks-effects-interactions).
 - Base RPC availability: payment verification depends on the public Base RPC
   endpoint (https://mainnet.base.org). If it is unreachable, the fact fetch
   returns "not found" and the gate fails (verdict false) — we never approve a
@@ -67,11 +73,17 @@ Design decisions (v1)
   minimum stake — configured via constructor for future tuning. Rationale: keep the
   bar low for genuine appellants; anti-spam is deferred until Studionet testing
   surfaces real abuse numbers.
+- Appeal window is a constructor parameter in SECONDS (default 3600 = 1 hour),
+  enforced against the node-assigned transaction timestamp (see limitations).
 - Forfeited appeal stakes (when an appeal is held, i.e. the verdict does NOT
   flip) are split 50/50 between the *origin resolver* (the address that invoked
   resolve_claim for that claim) and the treasury (contract owner). Both halves
   are accounted in storage (forfeited_stake = treasury; resolver_rewards per
-  address) because gl.transfer is unreliable on Studionet.
+  address) and are paid out as REAL transfers via withdraw_reward() and
+  withdraw_treasury() using emit_transfer.
+- Finalization: an uncontested claim stays "resolved" until anyone calls
+  finalize_claim() after the appeal window has passed, which moves it to
+  "final". Consumers must treat ONLY status == "final" as safe to act on.
 - category is a free string (v1): curated enums deferred until usage patterns
   emerge. Payment verification is triggered by the presence of tx_hash, not by
   category, so any category can carry a verifiable payment.
@@ -79,6 +91,56 @@ Design decisions (v1)
 import json
 
 from genlayer import *
+
+
+# ── Deterministic ISO-8601 → Unix epoch conversion ─────────────────────
+# Pure integer arithmetic (no datetime module, no floats) so every validator
+# computes the identical epoch from gl.message_raw["datetime"].
+
+def _days_from_civil(y: int, m: int, d: int) -> int:
+    """Days since 1970-01-01 for a civil date (Howard Hinnant's algorithm)."""
+    y = y - (1 if m <= 2 else 0)
+    era = (y if y >= 0 else y - 399) // 400
+    yoe = y - era * 400
+    doy = (153 * (m + (-3 if m > 2 else 9)) + 2) // 5 + d - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+
+
+def _iso_to_epoch(dt: str) -> int:
+    """Parse an ISO-8601 UTC timestamp (as emitted by GenVM, e.g.
+    "2026-08-22T12:00:00.123456Z") into Unix epoch seconds.
+
+    Handles the trailing "Z", fractional seconds, and any explicit UTC offset
+    suffix defensively. Raises on malformed input — a missing/invalid node
+    timestamp is a hard error, never silently coerced.
+    """
+    s = dt.strip()
+    if s.endswith("Z"):
+        s = s[:-1]
+    if "+" in s[10:]:
+        s = s.split("+", 1)[0]
+    date_part, _, time_part = s.partition("T")
+    y, mo, d = [int(x) for x in date_part.split("-")]
+    time_part = time_part.split(".", 1)[0]
+    hh, mm, ss = [int(x) for x in time_part.split(":")]
+    return _days_from_civil(y, mo, d) * 86400 + hh * 3600 + mm * 60 + ss
+
+
+def _strict_verdict(v) -> bool:
+    """Strict boolean parsing for LLM verdicts — fail closed on ambiguity.
+
+    Accepts a real JSON boolean, or the exact strings "true"/"false"
+    (case-insensitive, whitespace-trimmed). Anything else — including the
+    classic truthy-string trap where bool("false") == True — resolves to
+    False. A verdict we cannot unambiguously read is a verdict we do not
+    approve.
+    """
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+        return v.strip().lower() == "true"
+    return False
 
 
 class ClaimSubmitted(gl.Event):
@@ -120,19 +182,19 @@ class GVO(gl.Contract):
     owner: Address
     claims: TreeMap[str, str]
     next_id: u256
-    min_appeal_stake: u256      # minimum GEN (wei) required to appeal (0 = none)
-    appeal_window: u256          # measured in claim-counter units (see docstring)
+    min_appeal_stake: u256           # minimum GEN (wei) required to appeal (0 = none)
+    appeal_window_seconds: u256      # appeal window in wall-clock seconds
     total_resolved: u256
     total_appeals: u256
-    forfeited_stake: u256       # treasury half of held appeals
+    forfeited_stake: u256            # treasury half of held appeals (withdrawable)
     resolver_rewards: TreeMap[str, str]  # resolver addr -> accrued wei (resolver half)
 
-    def __init__(self, min_appeal_stake: u256 = u256(0), appeal_window: u256 = u256(100)):
+    def __init__(self, min_appeal_stake: u256 = u256(0), appeal_window_seconds: u256 = u256(3600)):
         self.owner = gl.message.sender_address
         self.claims = TreeMap()
         self.next_id = u256(1)
         self.min_appeal_stake = min_appeal_stake
-        self.appeal_window = appeal_window
+        self.appeal_window_seconds = appeal_window_seconds
         self.total_resolved = u256(0)
         self.total_appeals = u256(0)
         self.forfeited_stake = u256(0)
@@ -183,7 +245,7 @@ class GVO(gl.Contract):
             "appeal_stake": "0",
             "appellant": "",
             "resolved_count": "0",
-            "resolved_at_counter": str(self._current_counter()),
+            "resolved_at_timestamp": "0",
         }
         self.claims[str(claim_id)] = json.dumps(record)
         self.next_id = claim_id + u256(1)
@@ -210,7 +272,7 @@ class GVO(gl.Contract):
         record["verdict"] = "true" if verdict else "false"
         record["reasoning"] = reasoning
         record["resolved_count"] = str(1)
-        record["resolved_at_counter"] = str(self._current_counter())
+        record["resolved_at_timestamp"] = str(self._now_epoch())
         self.claims[key] = json.dumps(record)
         self.total_resolved = self.total_resolved + u256(1)
         ClaimResolved(claim_id, verdict=verdict).emit()
@@ -222,12 +284,19 @@ class GVO(gl.Contract):
 
         Payable: msg.value may be 0 (no minimum stake in v1). On success sets
         status to "appealed". Only one appeal per claim. Returns True on success.
+
+        The appeal window is a wall-clock deadline: the claim may be appealed
+        only while (now - resolved_at_timestamp) <= appeal_window_seconds.
+        "now" is the node-assigned transaction timestamp (gl.message_raw
+        datetime), which callers cannot influence — submitting extra claims
+        does NOT shift anyone's deadline.
         """
         key = str(claim_id)
         record = json.loads(self.claims[key])
         assert record["status"] == "resolved", "claim not resolved"
         assert record["resolved_count"] == "1", "already appealed or final"
-        assert int(self._current_counter()) - int(record["resolved_at_counter"]) <= int(str(self.appeal_window)), "appeal window closed"
+        elapsed = self._now_epoch() - int(record["resolved_at_timestamp"])
+        assert elapsed <= int(str(self.appeal_window_seconds)), "appeal window closed"
         assert gl.message.value >= self.min_appeal_stake, "stake too low"
 
         record["status"] = "appealed"
@@ -277,29 +346,107 @@ class GVO(gl.Contract):
         ClaimFinalized(claim_id, final_verdict=final_verdict).emit()
         return final_verdict
 
-    # ── Withdrawal (explicit, owner-only — avoids unreliable on-chain transfers) ──
+    # ── Finalization (uncontested claims) ────────────────────────────
+
+    @gl.public.write
+    def finalize_claim(self, claim_id: u256) -> bool:
+        """Move an uncontested resolved claim to "final" once its appeal window has passed.
+
+        Callable by anyone (permissionless) — it only advances state that is
+        already determined by the clock. Requirements:
+          - status == "resolved" (never appealed)
+          - the appeal window has fully elapsed:
+            (now - resolved_at_timestamp) > appeal_window_seconds
+
+        After finalization the verdict is immutable and consumers may act on
+        it. Consumers MUST treat only status == "final" as safe to act on —
+        "resolved" means the appeal window is still open.
+
+        Emits ClaimFinalized(claim_id, final_verdict). Returns True.
+        """
+        key = str(claim_id)
+        record = json.loads(self.claims[key])
+        assert record["status"] == "resolved", "claim not resolved"
+        elapsed = self._now_epoch() - int(record["resolved_at_timestamp"])
+        assert elapsed > int(str(self.appeal_window_seconds)), "appeal window still open"
+
+        record["status"] = "final"
+        self.claims[key] = json.dumps(record)
+        ClaimFinalized(claim_id, final_verdict=record["verdict"] == "true").emit()
+        return True
+
+    # ── Withdrawals (real transfers via emit_transfer) ───────────────
 
     @gl.public.write
     def withdraw_stake(self, claim_id: u256) -> bool:
-        """Appellant withdraws a refundable stake after a successful appeal."""
+        """Appellant withdraws a refundable stake after a successful appeal.
+
+        Performs a REAL transfer of the refundable amount to the appellant via
+        emit_transfer (message-based value transfer, on="finalized").
+        Bookkeeping is cleared BEFORE the transfer is emitted
+        (checks-effects-interactions).
+        """
         key = str(claim_id)
         record = json.loads(self.claims[key])
         assert record.get("stake_refundable", "0") not in ("", "0"), "nothing refundable"
         appellant = record["appellant"]
         assert str(gl.message.sender_address) == appellant, "only appellant"
         amount = int(record["stake_refundable"])
+        # Effects first: clear the bookkeeping entry before emitting value.
         record["stake_refundable"] = "0"
         self.claims[key] = json.dumps(record)
-        # Transfer is performed by the caller (appellant) pulling funds; the
-        # contract only clears the bookkeeping entry. Value transfer itself is
-        # intentionally not attempted here (see docstring trust model).
+        # Real transfer: emit a native value message to the appellant.
+        gl.get_contract_at(Address(appellant)).emit_transfer(value=u256(amount))
+        return True
+
+    @gl.public.write
+    def withdraw_reward(self) -> bool:
+        """Resolver withdraws their full accrued resolver_rewards balance.
+
+        Rewards accrue when an appeal is held (verdict does not flip): the
+        resolver who originally resolved the claim earns half of the forfeited
+        appeal stake. This function pays the caller's entire accrued balance
+        out as a REAL transfer via emit_transfer and zeroes the balance first
+        (checks-effects-interactions).
+        """
+        resolver = str(gl.message.sender_address)
+        balance = int(self.resolver_rewards.get(resolver, "0") or "0")
+        assert balance > 0, "no reward balance"
+        # Effects first: zero the balance before emitting value.
+        self.resolver_rewards[resolver] = "0"
+        gl.get_contract_at(Address(resolver)).emit_transfer(value=u256(balance))
+        return True
+
+    @gl.public.write
+    def withdraw_treasury(self) -> bool:
+        """Owner withdraws the treasury's accrued forfeited-stake share.
+
+        Symmetric to withdraw_reward for the treasury half (forfeited_stake).
+        Owner-only. Real transfer via emit_transfer; bookkeeping zeroed first.
+        """
+        assert str(gl.message.sender_address) == str(self.owner), "only owner"
+        amount = int(str(self.forfeited_stake))
+        assert amount > 0, "no treasury balance"
+        self.forfeited_stake = u256(0)
+        gl.get_contract_at(self.owner).emit_transfer(value=u256(amount))
         return True
 
     # ── Views ────────────────────────────────────────────────────────
 
     @gl.public.view
     def get_verdict(self, claim_id: u256) -> str:
-        """Return (verdict, status) as JSON. The function 3rd-party contracts call."""
+        """Return (verdict, status) as JSON. The function 3rd-party contracts call.
+
+        CONSUMER CONTRACT: only act when status == "final".
+          - "pending"  — no verdict yet.
+          - "resolved" — verdict exists but the appeal window may still be open;
+                         NOT safe to act on. Anyone can call finalize_claim()
+                         once the window has passed.
+          - "appealed" — a re-review is in progress.
+          - "final"    — verdict is immutable; safe to act on. Reached either by
+                         resolve_appeal() (contested) or finalize_claim()
+                         (uncontested, after the appeal window closed).
+        """
         record = json.loads(self.claims[str(claim_id)])
         return json.dumps({
             "verdict": record["verdict"],
@@ -338,16 +485,26 @@ class GVO(gl.Contract):
             "total_appeals": str(self.total_appeals),
             "forfeited_stake": str(self.forfeited_stake),
             "min_appeal_stake": str(self.min_appeal_stake),
-            "appeal_window": str(self.appeal_window),
+            "appeal_window_seconds": str(self.appeal_window_seconds),
             "approval_rate": self._approval_rate(),
         })
 
     # ── Internal helpers ─────────────────────────────────────────────
 
-    def _current_counter(self) -> str:
-        # Proxy for sequential ordering. The number of claims created so far stands
-        # in for block height because no block/timestamp primitive is exposed.
-        return str(self.next_id - u256(1))
+    def _now_epoch(self) -> int:
+        """Current wall-clock time as Unix epoch seconds.
+
+        Source: gl.message_raw["datetime"] — the ISO-8601 transaction timestamp
+        assigned by the GenVM node at execution time. It is NOT a client-supplied
+        field (the transaction carries no datetime), so it is non-manipulable:
+        submitting throwaway claims or crafting special transactions cannot
+        shift it. This replaces the old claim-counter-based "clock", which was
+        manipulable by spamming submit_claim.
+
+        Parsing is pure integer arithmetic (no datetime module, no floats) so it
+        is deterministic across validators.
+        """
+        return _iso_to_epoch(str(gl.message_raw["datetime"]))
 
     def _approval_rate(self) -> str:
         # Integer math only — GenVM forbids non-deterministic float arithmetic.
@@ -411,13 +568,16 @@ class GVO(gl.Contract):
             leader_data = leaders_res.calldata
             my_data = leader_fn()
             # Partial-field equivalence: compare only the decision, not the reasoning.
-            return bool(leader_data.get("verdict")) == bool(my_data.get("verdict"))
+            # Both sides go through the same strict boolean parser so a string
+            # "false" can never be read as true on one side only.
+            return _strict_verdict(leader_data.get("verdict")) == _strict_verdict(my_data.get("verdict"))
 
         result = gl.vm.run_nondet(leader_fn, validator_fn)
         result_dict = json.loads(result) if isinstance(result, str) else result
         if not isinstance(result_dict, dict):
             return False, ""
-        return bool(result_dict.get("verdict", False)), str(result_dict.get("reasoning", ""))
+        # Strict boolean parse: a JSON string "false" must NOT become True.
+        return _strict_verdict(result_dict.get("verdict")), str(result_dict.get("reasoning", ""))
 
     # ── x402 / USDC on-chain payment verification ───────────────────
 
@@ -604,7 +764,8 @@ class GVO(gl.Contract):
                 result = json.loads(result)
 
             return json.dumps({
-                "verdict": bool(result.get("verdict", False)),
+                # Strict boolean parse: a JSON string "false" must NOT become True.
+                "verdict": _strict_verdict(result.get("verdict")),
                 "gate": "pass",
                 "reasoning": str(result.get("reasoning", "")),
                 "facts": facts,
@@ -629,11 +790,11 @@ class GVO(gl.Contract):
             if json.dumps(lf.get("usdc_transfers", []), sort_keys=True) != json.dumps(mf.get("usdc_transfers", []), sort_keys=True):
                 return False
 
-            # Then compare the decision.
-            return bool(leader_data.get("verdict")) == bool(my_data.get("verdict"))
+            # Then compare the decision (strict boolean parse on both sides).
+            return _strict_verdict(leader_data.get("verdict")) == _strict_verdict(my_data.get("verdict"))
 
         result = gl.vm.run_nondet(leader_fn, validator_fn)
         result_dict = json.loads(result) if isinstance(result, str) else result
         if not isinstance(result_dict, dict):
             return False, ""
-        return bool(result_dict.get("verdict", False)), str(result_dict.get("reasoning", ""))
+        return _strict_verdict(result_dict.get("verdict")), str(result_dict.get("reasoning", ""))

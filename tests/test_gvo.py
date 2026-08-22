@@ -9,8 +9,17 @@ where the direct-mode SDK allows, and otherwise verify the deterministic flow:
 
 Payment-verification tests mock the Base JSON-RPC endpoint (POST) and the LLM to
 exercise the on-chain fact gate end-to-end in direct mode.
+
+Round-2 steward fixes covered here:
+  - finalize_claim: happy path + assert-fails-before-deadline
+  - withdraw_stake / withdraw_reward / withdraw_treasury: REAL transfers
+    (balance deltas via a PostMessage hook, not just storage flags)
+  - appeal deadline is time-based (gl.message_raw datetime), and spamming
+    claims does NOT shift the deadline
+  - verdict parsing rejects the string "false" (truthy-string regression)
 """
 import json
+import sys
 
 import pytest
 from eth_utils import to_checksum_address
@@ -18,6 +27,55 @@ from eth_utils import to_checksum_address
 
 def addr(raw_bytes):
     return to_checksum_address(raw_bytes)
+
+
+# ── Time control for direct mode ─────────────────────────────────────
+# gltest's vm.warp() updates vm._datetime but does NOT propagate to the loaded
+# contract module's cached gl.message_raw["datetime"] (which is what GVO reads
+# via _now_epoch). We set both so time-based logic sees the warped clock.
+def warp(direct_vm, iso):
+    direct_vm.warp(iso)
+    gl = sys.modules["genlayer.gl"]
+    gl.message_raw["datetime"] = iso
+
+
+# Fixed reference clock so tests are deterministic.
+T0 = "2026-08-22T00:00:00Z"          # epoch 1787356800
+T_WITHIN = "2026-08-22T00:30:00Z"    # +1800s (inside 3600s window)
+T_PAST = "2026-08-22T01:00:01Z"      # +3601s (just past 3600s window)
+
+
+def _contract_bytes(direct_vm):
+    ca = direct_vm._contract_address
+    return bytes(ca) if hasattr(ca, "__bytes__") else ca.as_bytes
+
+
+class TransferRecorder:
+    """Install as direct_vm._gl_call_hook to intercept emit_transfer
+    (PostMessage) calls, record them, and simulate balance movement so
+    balance-delta assertions work in direct mode."""
+
+    def __init__(self, direct_vm):
+        self.vm = direct_vm
+        self.transfers = []  # list of (to_checksum_hex, amount_int)
+        self.contract_bytes = _contract_bytes(direct_vm)
+
+    def __call__(self, vm, request):
+        if isinstance(request, dict) and "PostMessage" in request:
+            pm = request["PostMessage"]
+            to_addr = pm.get("address")
+            to_bytes = bytes(to_addr) if hasattr(to_addr, "__bytes__") else to_addr.as_bytes
+            val = int(pm.get("value", 0))
+            self.transfers.append((to_checksum_address(to_bytes), val))
+            # Simulate the value movement: out of contract, into recipient.
+            vm._balances[self.contract_bytes] = vm._balances.get(self.contract_bytes, 0) - val
+            vm._balances[to_bytes] = vm._balances.get(to_bytes, 0) + val
+            return {"ok": None}
+        return None
+
+    def install(self):
+        self.vm._gl_call_hook = self
+        return self
 
 
 # ── x402 / USDC test constants ──────────────────────────────────────
@@ -152,7 +210,9 @@ def test_stats_empty(direct_deploy):
     s = json.loads(gvo.get_stats())
     assert s["total_claims"] == "0"
     assert s["min_appeal_stake"] == "0"     # no minimum stake (decision #2)
-    assert s["appeal_window"] == "100"
+    # Appeal window is now wall-clock SECONDS (default 3600 = 1 hour), not a
+    # claim-counter. Renamed field reflects the new semantics.
+    assert s["appeal_window_seconds"] == "3600"
     assert s["forfeited_stake"] == "0"
 
 
@@ -461,3 +521,265 @@ def test_usdc_verification_matches_among_multiple_transfers(direct_deploy, direc
 
     claim = json.loads(gvo.get_claim(cid))
     assert claim["verdict"] == "true"
+
+
+# ── Round-2 steward fixes ────────────────────────────────────────────
+
+# ISSUE 1 — finalize_claim for uncontested claims
+
+def test_finalize_claim_happy_path(direct_deploy, direct_vm):
+    """resolve -> (window passes) -> finalize_claim moves status to 'final'."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid)
+
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["status"] == "resolved"
+
+    # After the appeal window passes, anyone may finalize.
+    warp(direct_vm, T_PAST)
+    assert gvo.finalize_claim(cid) is True
+
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["status"] == "final"
+    assert claim["verdict"] == "true"
+
+    v = json.loads(gvo.get_verdict(cid))
+    assert v["status"] == "final"
+    assert v["verdict"] == "true"
+
+
+def test_finalize_claim_fails_before_deadline(direct_deploy, direct_vm):
+    """finalize_claim must revert while the appeal window is still open."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid)
+
+    # Still inside the window -> finalize must fail and leave status unchanged.
+    warp(direct_vm, T_WITHIN)
+    with pytest.raises(Exception):
+        gvo.finalize_claim(cid)
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["status"] == "resolved"
+
+    # Not yet resolved (pending) -> also fails.
+    cid2 = gvo.submit_claim("cat", "desc2", "crit", "https://e.com/x")
+    with pytest.raises(Exception):
+        gvo.finalize_claim(cid2)
+
+
+# ISSUE 2 — real transfers for stake refunds and resolver rewards
+
+def test_withdraw_stake_real_transfer(direct_deploy, direct_vm, direct_alice):
+    """Successful appeal (verdict flips) -> withdraw_stake moves REAL value
+    to the appellant (balance delta, not just a storage flag)."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid)
+
+    # Alice appeals with a 1000-wei stake.
+    direct_vm.value = 1000
+    with direct_vm.prank(direct_alice):
+        assert gvo.appeal_claim(cid) is True
+    direct_vm.value = 0
+
+    # Flip the verdict on re-review -> stake becomes refundable.
+    direct_vm._llm_mocks.clear()
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": False, "reasoning": "flipped"}))
+    gvo.resolve_appeal(cid)
+
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["stake_refundable"] == "1000"
+    assert claim["status"] == "final"
+
+    # Fund the contract and intercept the emitted transfer.
+    rec = TransferRecorder(direct_vm).install()
+    direct_vm.deal(rec.contract_bytes, 1000)
+    alice_hex = addr(direct_alice)
+    alice_bytes = bytes.fromhex(alice_hex[2:])
+    alice_before = direct_vm._balances.get(alice_bytes, 0)
+
+    with direct_vm.prank(direct_alice):
+        assert gvo.withdraw_stake(cid) is True
+
+    # REAL transfer: alice's balance went up by exactly the stake.
+    assert direct_vm._balances.get(alice_bytes, 0) - alice_before == 1000
+    assert rec.transfers == [(alice_hex, 1000)]
+    # Bookkeeping cleared so it cannot be double-withdrawn.
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["stake_refundable"] == "0"
+    with direct_vm.prank(direct_alice):
+        with pytest.raises(Exception):
+            gvo.withdraw_stake(cid)
+
+
+def test_withdraw_reward_real_transfer(direct_deploy, direct_vm, direct_owner, direct_alice):
+    """Held appeal (verdict stands) -> resolver earns half the forfeited stake;
+    withdraw_reward pays it out as a REAL transfer."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    # Default sender (owner) resolves -> owner is the resolver.
+    gvo.resolve_claim(cid)
+
+    # Alice appeals; verdict does NOT flip -> stake forfeited, split 50/50.
+    direct_vm.value = 1000
+    with direct_vm.prank(direct_alice):
+        assert gvo.appeal_claim(cid) is True
+    direct_vm.value = 0
+    gvo.resolve_appeal(cid)
+
+    owner_hex = addr(direct_owner)
+    assert gvo.get_resolver_rewards(owner_hex) == "500"
+
+    rec = TransferRecorder(direct_vm).install()
+    direct_vm.deal(rec.contract_bytes, 500)
+    owner_bytes = bytes.fromhex(owner_hex[2:])
+    owner_before = direct_vm._balances.get(owner_bytes, 0)
+
+    # Owner (the resolver, default sender) withdraws their reward.
+    assert gvo.withdraw_reward() is True
+
+    assert direct_vm._balances.get(owner_bytes, 0) - owner_before == 500
+    assert rec.transfers == [(owner_hex, 500)]
+    assert gvo.get_resolver_rewards(owner_hex) == "0"
+    # Nothing left to withdraw.
+    with pytest.raises(Exception):
+        gvo.withdraw_reward()
+
+
+def test_withdraw_treasury_real_transfer(direct_deploy, direct_vm, direct_owner, direct_alice):
+    """Held appeal -> treasury (owner) accrues the other half; withdraw_treasury
+    pays it out as a REAL transfer and is owner-only."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid)
+
+    direct_vm.value = 1000
+    with direct_vm.prank(direct_alice):
+        assert gvo.appeal_claim(cid) is True
+    direct_vm.value = 0
+    gvo.resolve_appeal(cid)
+
+    s = json.loads(gvo.get_stats())
+    assert s["forfeited_stake"] == "500"
+
+    rec = TransferRecorder(direct_vm).install()
+    direct_vm.deal(rec.contract_bytes, 500)
+    owner_hex = addr(direct_owner)
+    owner_bytes = bytes.fromhex(owner_hex[2:])
+    owner_before = direct_vm._balances.get(owner_bytes, 0)
+
+    # Non-owner cannot withdraw the treasury.
+    with direct_vm.prank(direct_alice):
+        with pytest.raises(Exception):
+            gvo.withdraw_treasury()
+
+    assert gvo.withdraw_treasury() is True
+    assert direct_vm._balances.get(owner_bytes, 0) - owner_before == 500
+    assert rec.transfers == [(owner_hex, 500)]
+    s = json.loads(gvo.get_stats())
+    assert s["forfeited_stake"] == "0"
+
+
+# ISSUE 3 — time-based (non-manipulable) appeal deadline
+
+def test_appeal_deadline_not_shifted_by_claim_spam(direct_deploy, direct_vm, direct_alice):
+    """Spamming submit_claim advances the claim counter but must NOT close or
+    shift anyone's appeal window — the deadline is a wall-clock timestamp."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+
+    cid1 = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid1)
+    resolved_ts = int(json.loads(gvo.get_claim(cid1))["resolved_at_timestamp"])
+
+    # SPAM: 25 throwaway claims advance next_id / the old claim-counter a lot.
+    for i in range(25):
+        gvo.submit_claim("spam", f"spam {i}", "crit", "https://e.com/spam")
+    assert int(gvo.get_claim_count()) == 26
+
+    # The stored deadline is a timestamp, untouched by the spam.
+    assert int(json.loads(gvo.get_claim(cid1))["resolved_at_timestamp"]) == resolved_ts
+
+    # Still inside the TIME window -> appeal must still be allowed even though
+    # the claim counter jumped by 25 (old counter clock would have closed it).
+    warp(direct_vm, T_WITHIN)
+    direct_vm.value = 0
+    with direct_vm.prank(direct_alice):
+        assert gvo.appeal_claim(cid1) is True
+
+
+def test_appeal_closes_on_time_not_counter(direct_deploy, direct_vm, direct_alice):
+    """Even with NO claim activity advancing a counter, the appeal window closes
+    purely because wall-clock time passed the deadline."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": True, "reasoning": "ok"}))
+    gvo.resolve_claim(cid)
+
+    # No spam at all — counter barely moves. Warp past the window.
+    warp(direct_vm, T_PAST)
+    direct_vm.value = 0
+    with direct_vm.prank(direct_alice):
+        with pytest.raises(Exception):
+            gvo.appeal_claim(cid)
+
+
+# ISSUE 4 — strict boolean verdict parsing (truthy-string regression)
+
+def test_verdict_string_false_is_not_truthy(direct_deploy, direct_vm):
+    """REGRESSION: an LLM returning the JSON string "false" (not the boolean
+    false) must yield verdict False. bool("false") == True was the bug."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+    direct_vm.mock_web("https://e.com/x", "evidence says no")
+    direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": "false", "reasoning": "not satisfied"}))
+
+    verdict = gvo.resolve_claim(cid)
+    assert verdict is False  # must NOT be flipped to True
+
+    claim = json.loads(gvo.get_claim(cid))
+    assert claim["verdict"] == "false"
+
+
+def test_verdict_strict_parsing_variants(direct_deploy, direct_vm):
+    """Strict parser: real bools pass through; exact "true"/"false" strings are
+    honoured; anything ambiguous fails closed to False."""
+    gvo = direct_deploy("contracts/gvo.py")
+    warp(direct_vm, T0)
+    direct_vm.mock_web("https://e.com/x", "evidence")
+
+    def resolve_with(verdict_value):
+        cid = gvo.submit_claim("cat", "desc", "crit", "https://e.com/x")
+        direct_vm._llm_mocks.clear()
+        direct_vm.mock_llm(".*verification oracle.*", json.dumps({"verdict": verdict_value, "reasoning": "r"}))
+        return gvo.resolve_claim(cid)
+
+    assert resolve_with(True) is True        # real boolean true
+    assert resolve_with(False) is False      # real boolean false
+    assert resolve_with("false") is False    # string "false" -> False (regression)
+    assert resolve_with("true") is True      # string "true" -> True
+    assert resolve_with("FALSE") is False    # case-insensitive
+    assert resolve_with("yes") is False      # ambiguous -> fail closed
+    assert resolve_with(1) is False          # non-bool truthy -> fail closed
+    assert resolve_with(None) is False       # missing/null -> fail closed
