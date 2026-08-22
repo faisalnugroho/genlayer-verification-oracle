@@ -50,12 +50,16 @@
 
 <section>
   <h2>New claim</h2>
-  <p class="note">Write goes directly on-chain; this page is read-side. For a live demo, write in via a backend that holds GEN and relays — this is documented in README. Refer page.</p>
+  <p class="note">Submits via the backend relay (POST /api/v1/relay/submit), which signs and sends the transaction with its own funded account. For x402/USDC payment claims, fill the payment fields — the contract verifies them against Base chain data before consulting the LLM.</p>
   <form id="newClaim">
     <label>category <input name="category" placeholder="x402-dispute" ></label>
     <label>description <input name="description" placeholder="state the claim" ></label>
     <label>criteria <input name="criteria" placeholder="what counts as satisfying the claim" ></label>
     <label>evidence_url <input name="evidence_url" placeholder="public, ideally immutable URL" ></label>
+    <label>tx_hash (optional — Base tx for payment claims) <input name="tx_hash" placeholder="0x..." ></label>
+    <label>payer (optional) <input name="payer" placeholder="0x sender address" ></label>
+    <label>recipient (optional) <input name="recipient" placeholder="0x recipient address" ></label>
+    <label>amount (optional — USDC base units) <input name="amount" placeholder="e.g. 2000 = $0.002" ></label>
     <button type="submit">Post claim</button>
   </form>
 </section>
@@ -67,7 +71,7 @@
 </div>
 
 <script>
-const GVO_ADDRESS = "0x184C7F56a0183b37f2ceC88F589C8D856082c915";
+const GVO_ADDRESS = "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4";
 const API_BASE = window.__config__?.apiBase ??
   (location.protocol === "file:" ? "http://127.0.0.1:8000" : "");
 
@@ -125,17 +129,28 @@ async function load() {
   document.getElementById("newClaim").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const {category, description, criteria, evidence_url} = Object.fromEntries(fd.entries());
+    const fields = Object.fromEntries(fd.entries());
+    const body = {
+      category: fields.category || "",
+      description: fields.description || "",
+      criteria: fields.criteria || "",
+      evidence_url: fields.evidence_url || "",
+      tx_hash: fields.tx_hash || "",
+      payer: fields.payer || "",
+      recipient: fields.recipient || "",
+      amount: fields.amount || "",
+    };
     try {
       const resp = await fetch(API_BASE + "/api/v1/relay/submit", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({args:[category, description, criteria, evidence_url]}),
+        body: JSON.stringify(body),
       });
-      if (!resp.ok) throw new Error(String(resp.status));
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || String(resp.status));
       document.getElementById("claimsStatus").textContent =
-        "claim posted → waiting for consensus → then relocation";
-      setTimeout(load, 5000);
+        "claim #" + (data.claim_id ?? "?") + " posted (tx " + (data.tx_hash || "").slice(0, 18) + "…) — waiting for indexer refresh";
+      setTimeout(load, 8000);
     } catch (err) {
       document.getElementById("req").textContent = "submit failed: " + err.message;
     }

@@ -1,2 +1,5 @@
 fastapi
 uvicorn[standard]
+genlayer-py
+eth-account
+genlayer-test

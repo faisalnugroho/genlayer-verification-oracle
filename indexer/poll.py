@@ -18,8 +18,10 @@ from datetime import datetime, timezone
 from genlayer_py import create_account, create_client, studionet
 
 ENV = os.environ
-GVO_ADDRESS = ENV.get("GVO_ADDRESS", "0x184C7F56a0183b37f2ceC88F589C8D856082c915")
-DB_PATH = ENV.get("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "gvo.db"))
+GVO_ADDRESS = ENV.get("GVO_ADDRESS", "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4")
+DB_PATH = ENV.get("DATABASE_PATH", os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "gvo.db"
+))
 POLL_SECONDS = int(ENV.get("POLL_SECONDS", "10"))
 
 
@@ -43,6 +45,10 @@ def init_db(conn):
             description TEXT,
             criteria TEXT,
             evidence_url TEXT,
+            tx_hash TEXT,
+            payer TEXT,
+            recipient TEXT,
+            amount TEXT,
             status TEXT,
             verdict TEXT,
             reasoning TEXT,
@@ -55,6 +61,11 @@ def init_db(conn):
         )
         """
     )
+    # Migrate legacy DBs that lack the payment columns.
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(claims)").fetchall()}
+    for col in ("tx_hash", "payer", "recipient", "amount"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE claims ADD COLUMN {col} TEXT DEFAULT ''")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS stats (
@@ -90,15 +101,20 @@ def upsert(conn, claims, stats_raw):
             """
             INSERT INTO claims
             (claim_id, requester, category, description, criteria, evidence_url,
+             tx_hash, payer, recipient, amount,
              status, verdict, reasoning, appellant, appeal_stake,
              resolver, stake_refundable, resolved_count, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(claim_id) DO UPDATE SET
                 requester=excluded.requester,
                 category=excluded.category,
                 description=excluded.description,
                 criteria=excluded.criteria,
                 evidence_url=excluded.evidence_url,
+                tx_hash=excluded.tx_hash,
+                payer=excluded.payer,
+                recipient=excluded.recipient,
+                amount=excluded.amount,
                 status=excluded.status,
                 verdict=excluded.verdict,
                 reasoning=excluded.reasoning,
@@ -116,6 +132,10 @@ def upsert(conn, claims, stats_raw):
                 d.get("description", ""),
                 d.get("criteria", ""),
                 d.get("evidence_url", ""),
+                d.get("tx_hash", ""),
+                d.get("payer", ""),
+                d.get("recipient", ""),
+                d.get("amount", ""),
                 d.get("status", ""),
                 d.get("verdict", ""),
                 d.get("reasoning", ""),

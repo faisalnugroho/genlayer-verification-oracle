@@ -9,7 +9,7 @@ import time
 from genlayer_py import create_account, create_client, studionet
 from genlayer_py.types import TransactionStatus
 
-GVO_ADDRESS = "0x184C7F56a0183b37f2ceC88F589C8D856082c915"
+GVO_ADDRESS = "0x9865948Aa5170C50F4B73bf47706C8A09f7135d4"
 
 def log(m):
     print(m, flush=True)
