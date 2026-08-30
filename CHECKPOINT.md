@@ -107,3 +107,38 @@ TECH NOTES (headless genlayer-py):
   - TRANSFER PRIMITIVE: gl.get_contract_at(addr).emit_transfer(value=...,
     on="finalized"). In gltest direct mode this emits a PostMessage gl_call;
     tests intercept it via a _gl_call_hook to simulate balance movement.
+
+=== GVO WEBSITE ROUND — 2026-08-30 =====================================
+WEBSITE (LIVE): https://gvo-jade.vercel.app  (Vercel project "gvo")
+  - web/index.html: Cyber Y2K frontend (hero, paths A/B, claim browser CRT
+    console, submit form, reproduce guide, appeal timeline, links, limits)
+  - web/api/proxy.js: Vercel edge fn, same-origin /api/v1/* -> backend tunnel
+  - web/vercel.json: rewrites /api/v1/* -> /api/proxy
+  - Deploy: cd web && vercel deploy --prod --token $VERCEL_TOKEN
+    (project.json lokal web/.vercel menunjuk project "gvo")
+
+BACKEND LIVE DI VPS (systemd, enabled):
+  - gvo-backend.service  : uvicorn main:app 127.0.0.1:8901
+  - gvo-indexer.service  : indexer/poll.py, POLL_SECONDS=120 + backoff
+                           (Studionet 500 gen_call/jam/IP — jangan turunkan!)
+  - gvo-tunnel.service   : cloudflared quick tunnel -> 127.0.0.1:8901
+  - Cron tiap 5 menit: backend/tunnel_url_push.sh -> commit TUNNEL_URL ke repo
+    main (edge proxy baca raw.githubusercontent .../main/backend/TUNNEL_URL)
+  - nginx site gvo-api (port 80) ada tapi inbound VPS diblokir security
+    group Tencent — tidak dipakai, tunnel outbound yang dipakai.
+
+RELAY ENDPOINTS (backend/main.py):
+  - POST /api/v1/relay/submit   -> submit_claim
+  - POST /api/v1/relay/resolve  -> resolve_claim (repro verdict)
+  - POST /api/v1/relay/finalize -> finalize_claim (repro guard)
+  Rate limit 5/IP/10men, IP asli dari XFF pertama.
+
+VERIFIED E2E 2026-08-30:
+  - submit via https://gvo-jade.vercel.app -> claim #4 (tx 0xfb24458d…)
+  - resolve -> verdict false + LLM reasoning tampil di claim browser
+  - index #4 di gvo.db; stats 4 claims / 3 resolved
+KNOWN QUIRKS:
+  - verdict di response relay/resolve sering null (ekstraksi receipt),
+    verdict sebenarnya tetap tersimpan on-chain + di mirror — frontend
+    menampilkan dari /claims, bukan dari response resolve.
+  - Deployment preview lama "web-*" dan project "web" sudah dihapus dari Vercel.
