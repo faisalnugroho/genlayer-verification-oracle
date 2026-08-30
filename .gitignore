@@ -8,3 +8,6 @@ gvo.db
 .env
 venv/
 env/
+.vercel
+backend/tunnel_push.log
+artifacts/

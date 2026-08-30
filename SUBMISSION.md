@@ -12,6 +12,9 @@ a GVO verdict instead of re-implementing AI-judgment logic.
 happy path but leaves dispute resolution unsolved. GVO is the shared adjudication
 layer for the agentic economy — exactly what GenLayer is built for.
 
+**Website (live):** https://gvo-jade.vercel.app — submit → resolve → finalize,
+reproducible from the browser, no wallet needed.
+
 ---
 
 ## Steward Rejection — Addressed
@@ -119,6 +122,55 @@ All four points are implemented, tested, and live on Studionet.
 - **Network:** GenLayer Studionet (chain id 61999, RPC `https://studio.genlayer.com/api`)
 - **Explorer:** https://explorer-studio.genlayer.com
 - **Constructor:** `min_appeal_stake=0`, `appeal_window_seconds=3600`
+
+---
+
+## Website (live)
+
+**https://gvo-jade.vercel.app** — Cyber Y2K themed landing + dashboard, all data
+LIVE from the deployed contract (no mock numbers; a clearly-marked "DEMO DATA"
+mode only appears if the backend is unreachable).
+
+What the steward can do there, end-to-end, with no wallet or key:
+
+1. **See live metrics** — total claims / resolved / approval rate / appeals,
+   mirrored from the contract by the indexer.
+2. **Browse claims** — every claim with status, verdict (TRUE/FALSE), the
+   validators' reasoning, and a direct Studionet explorer link to the
+   submit/resolve transactions.
+3. **Submit a claim** — the form relays through `POST /api/v1/relay/submit`
+   (backend-held funded account signs; browser never holds a key). Rate
+   limit: 5 submissions / IP / 10 min.
+4. **Resolve it** — press RESOLVE on a pending claim (relays `resolve_claim`);
+   validator consensus runs and the verdict + reasoning appear.
+5. **Finalize it** — after the appeal window, press FINALIZE (relays
+   `finalize_claim`); before the window elapses, the contract correctly
+   reverts — the guard is demonstrable.
+
+### Reproduce the verification outcome yourself
+
+- **Evidence-only (Path A):** submit any claim with category / description /
+  criteria / a public evidence URL. Resolve it. The LLM judges the evidence
+  against your stated criteria.
+- **x402/USDC payment (Path B):** submit with a real Base USDC `tx_hash` +
+  matching `payer` / `recipient` / `amount` (integer base units, USDC = 6
+  decimals) → verdict TRUE when facts match. Change the amount → verdict FALSE
+  with reasoning "no USDC transfer matches claimed payer/recipient/amount" —
+  the deterministic on-chain gate rejecting, LLM never consulted.
+  - Example pair already on-chain: claim #2 (TRUE — a real 52.689366 USDC
+    transfer on Base) vs claim #3 (FALSE — same tx, fabricated amount).
+- The same lifecycle is also reproducible from the CLI via `exercise_live.py`.
+
+### Website architecture (for reviewers)
+
+```
+browser → Vercel (static + edge proxy /api/v1/*)
+        → cloudflared tunnel (URL auto-synced to backend/TUNNEL_URL in-repo)
+        → VPS: FastAPI backend + SQLite indexer → Studionet RPC
+```
+
+Reads go through the indexer mirror; writes go through the relay — the browser
+never holds a private key or talks to RPC directly.
 
 ### Live Exercise Results (real Base tx)
 

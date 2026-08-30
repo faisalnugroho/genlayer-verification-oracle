@@ -34,13 +34,36 @@ proposals — can read that verdict instead of building their own judgment layer
 | `exercise_live.py` | Exercise the write functions on the live deployed contract. |
 | `tests/test_gvo.py` | Direct-mode (gltest) test suite — 15 tests incl. USDC gate approve/reject. No live LLM/network needed. |
 | `indexer/poll.py` | Read-side indexer: polls the contract into SQLite. |
-| `backend/main.py` | FastAPI API: read endpoints + **write relay** (`POST /api/v1/relay/submit`). |
-| `web/index.html` | Static frontend: live metrics, claim browser, claim submission form. |
+| `backend/main.py` | FastAPI API: read endpoints + **write relay** (`POST /api/v1/relay/submit`, `/relay/resolve`, `/relay/finalize`). |
+| `web/index.html` | Cyber Y2K frontend (deployed at **https://gvo-jade.vercel.app**): live metrics, claim browser, submit form, reproduce flow. |
 
 ## Deployed (LIVE on Studionet)
 
 - **Chain:** GenLayer Studionet (chain id `61999`, RPC `https://studio.genlayer.com/api`)
 - **Contract:** `0xE6f6C5130452312A83eB32883fe223271EF2517B`
+- **Website:** https://gvo-jade.vercel.app — live metrics, claim browser, and the
+  full submit → resolve → finalize lifecycle, reproducible from the browser with
+  no wallet or key.
+
+## How to reproduce a verification outcome (from the website)
+
+1. **Submit** — fill the form at https://gvo-jade.vercel.app/#submit and press
+   *Submit claim*. Leave `tx_hash` empty for an evidence-only claim (Path A), or
+   fill all four payment fields to trigger the deterministic Base USDC gate
+   (Path B). The relay returns your `claim_id` + tx hash.
+2. **Resolve** — find your claim in the claim browser (status `PENDING`) and
+   press *RESOLVE*. This relays `resolve_claim(claim_id)`: validator consensus
+   runs (evidence fetch + LLM judgment; the Base USDC gate first if Path B).
+3. **Read the verdict** — the claim row updates to `RESOLVED` with the verdict
+   (`TRUE`/`FALSE`) and the validators' reasoning. For Path B, a
+   payer/recipient/amount mismatch yields `FALSE` with the on-chain reason —
+   that's the gate working as designed.
+4. **(Optional) Finalize** — after the appeal window (3600 s) elapses, press
+   *FINALIZE* to move the claim to `FINAL` — the only status a consumer
+   contract should act on. Try it earlier and the contract reverts (the guard
+   firing).
+
+The same flow can be reproduced from the CLI via `exercise_live.py`.
 
 ## How GVO works
 
@@ -181,15 +204,36 @@ tries to download "latest" which currently 404s.)
 ## Backend / Frontend
 
 - `backend/` — FastAPI API. Read endpoints served from the SQLite mirror;
-  `POST /api/v1/relay/submit` relays `submit_claim` on-chain using a
+  write relays (`/api/v1/relay/submit`, `/relay/resolve`, `/relay/finalize`)
+  sign `submit_claim` / `resolve_claim` / `finalize_claim` on-chain using a
   backend-held account (env `GVO_RELAY_PRIVATE_KEY`, or a fresh faucet-funded
-  account if unset). Rate-limited per IP. Requires `fastapi`, `uvicorn`,
-  `genlayer-py`, `eth-account`, `genlayer-test` (see `backend/requirements.txt`).
-- `indexer/` — Long-lived poller populating SQLite for the backend.
-- `web/` — static `index.html` (metrics, claim browser, submission form).
+  account if unset). Rate-limited per IP (real client IP taken from the first
+  `X-Forwarded-For` entry, since requests arrive via the tunnel/proxy chain).
+  Requires `fastapi`, `uvicorn`, `genlayer-py`, `eth-account`, `genlayer-test`
+  (see `backend/requirements.txt`).
+- `indexer/` — Long-lived poller populating SQLite for the backend. Polls every
+  120 s with exponential backoff: Studionet enforces 500 `gen_call`/hour per IP,
+  and a full snapshot costs (2 + N claims) calls.
+- `web/` — Cyber Y2K static frontend (`index.html`) + Vercel edge proxy
+  (`api/proxy.js`). Deployed at https://gvo-jade.vercel.app.
+  - The edge function forwards same-origin `/api/v1/*` to the backend tunnel
+    URL (no CORS, no mixed-content — the browser never talks to the tunnel
+    directly).
+  - `backend/TUNNEL_URL` is auto-synced: the VPS runs `tunnel_url_push.sh`
+    (cron, every 5 min) which commits the current quick-tunnel URL to this
+    repo whenever it rotates, and the edge function re-reads it from raw
+    GitHub. Self-healing with no manual step.
+  - Reads and relay writes go through the backend; the browser never holds a
+    key or talks to RPC directly.
+  - If the backend is unreachable the site switches to clearly-marked demo
+    data ("DEMO DATA" badge) — never silently faked live numbers.
 
-Reads go through the backend/indexer mirror; writes go through the relay to the
-contract — the browser never holds a key or talks to RPC directly.
+### Ops notes (hosting on the VPS)
+
+- `gvo-indexer.service`, `gvo-backend.service`, `gvo-tunnel.service`
+  (systemd, enabled). Backend listens on 127.0.0.1:8901; the tunnel exposes it.
+- DuckDNS (`19zkr.duckdns.org`) points at the VPS but inbound ports are
+  blocked by the cloud security group — hence the outbound-tunnel design.
 
 ## Honest limitations
 
