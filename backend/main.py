@@ -306,11 +306,11 @@ def relay_submit(body: SubmitClaimBody, request: Request):
                 detail=f"tx {tx_hash} sent but did not reach ACCEPTED in time: {e}",
             )
 
-    exec_name = receipt.get("tx_execution_result_name") or ""
-    if exec_name and "RETURN" not in exec_name.upper():
+    failure = _receipt_failed(receipt)
+    if failure:
         raise HTTPException(
             status_code=502,
-            detail=f"transaction executed with errors ({exec_name}); tx={tx_hash}",
+            detail=f"{failure}; tx={tx_hash}",
         )
 
     claim_id = _extract_claim_id(receipt)
@@ -337,6 +337,38 @@ def relay_submit(body: SubmitClaimBody, request: Request):
 # ---------------------------------------------------------------------------
 class ResolveClaimBody(BaseModel):
     claim_id: int = Field(..., ge=1)
+
+
+def _receipt_failed(receipt: dict) -> Optional[str]:
+    """Return a human-readable failure reason if the receipt shows the
+    contract call errored, else None.
+
+    GenLayer error receipts are inconsistent: some carry
+    tx_execution_result_name != RETURN, others only mark the leader receipt
+    execution_result=ERROR / payload 'exit_code 1' with no result name at all.
+    Checking both is required — the relay must NEVER report success for a
+    reverted call (live incident 2026-08-30: relay/finalize returned
+    status=final for a tx the contract had rejected).
+    """
+    exec_name = receipt.get("tx_execution_result_name") or ""
+    if exec_name and "RETURN" not in exec_name.upper():
+        return f"transaction executed with errors ({exec_name})"
+    try:
+        leaders = receipt.get("consensus_data", {}).get("leader_receipt") or []
+        for lr in leaders if isinstance(leaders, list) else [leaders]:
+            if not isinstance(lr, dict):
+                continue
+            if str(lr.get("execution_result", "")).upper() == "ERROR":
+                payload = str(lr.get("payload", "")) or "exit code"
+                res = lr.get("result")
+                res_status = res.get("status") if isinstance(res, dict) else None
+                if res_status == "contract_error" or "exit_code" in payload:
+                    return (f"contract call reverted (assert failed) — "
+                            f"{payload}")
+                return f"leader receipt errored: {payload or res}"
+    except Exception:
+        pass
+    return None
 
 
 @app.post("/api/v1/relay/resolve")
@@ -381,11 +413,11 @@ def relay_resolve(body: ResolveClaimBody, request: Request):
                 detail=f"tx {tx_hash} sent but did not reach ACCEPTED in time: {e}",
             )
 
-    exec_name = receipt.get("tx_execution_result_name") or ""
-    if exec_name and "RETURN" not in exec_name.upper():
+    failure = _receipt_failed(receipt)
+    if failure:
         raise HTTPException(
             status_code=502,
-            detail=f"transaction executed with errors ({exec_name}); tx={tx_hash}",
+            detail=f"{failure}; tx={tx_hash}",
         )
 
     verdict = None
@@ -457,12 +489,11 @@ def relay_finalize(body: FinalizeClaimBody, request: Request):
                 detail=f"tx {tx_hash} sent but did not reach ACCEPTED in time: {e}",
             )
 
-    exec_name = receipt.get("tx_execution_result_name") or ""
-    if exec_name and "RETURN" not in exec_name.upper():
+    failure = _receipt_failed(receipt)
+    if failure:
         raise HTTPException(
             status_code=502,
-            detail=f"transaction executed with errors ({exec_name}) — e.g. appeal "
-                   f"window still open; tx={tx_hash}",
+            detail=f"{failure} — e.g. appeal window still open; tx={tx_hash}",
         )
 
     return {
