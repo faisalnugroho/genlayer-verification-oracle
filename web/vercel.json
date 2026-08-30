@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "build": {
+    "env": {
+      "NEXT_TELEMETRY_DISABLED": "1"
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/v1/claims", "destination": "/api/proxy" },
+    { "source": "/api/v1/claims/(.*)", "destination": "/api/proxy" },
+    { "source": "/api/v1/stats", "destination": "/api/proxy" },
+    { "source": "/api/v1/health", "destination": "/api/proxy" },
+    { "source": "/api/v1/gvo_address", "destination": "/api/proxy" },
+    { "source": "/api/v1/relay/(.*)", "destination": "/api/proxy" }
+  ]
+}

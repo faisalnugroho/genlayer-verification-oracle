@@ -330,3 +330,144 @@ def relay_submit(body: SubmitClaimBody, request: Request):
         "status": "accepted",
         "contract": GVO_ADDRESS,
     }
+
+
+# ---------------------------------------------------------------------------
+# Write relay — POST /api/v1/relay/resolve  (reproduce the verdict)
+# ---------------------------------------------------------------------------
+class ResolveClaimBody(BaseModel):
+    claim_id: int = Field(..., ge=1)
+
+
+@app.post("/api/v1/relay/resolve")
+def relay_resolve(body: ResolveClaimBody, request: Request):
+    """Relay resolve_claim(claim_id) — runs validator-consensus judgment.
+
+    This is the step a reviewer uses to reproduce a verification outcome:
+    submit a claim, resolve it, then read the verdict. Gas is spent by the
+    relay account (same per-IP rate limit as submit).
+    """
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() \
+        or (request.client.host if request.client else "unknown")
+    if not RATE_LIMITER.allow(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"rate limit exceeded: max {RATE_LIMIT} submissions per "
+                   f"{RATE_WINDOW}s",
+        )
+
+    with _RELAY_LOCK:
+        try:
+            tx_hash = CLIENT.write_contract(
+                address=GVO_ADDRESS,
+                function_name="resolve_claim",
+                account=RELAY_ACCOUNT,
+                args=[body.claim_id],
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"write_contract failed: {e}")
+
+        try:
+            receipt = CLIENT.wait_for_transaction_receipt(
+                transaction_hash=tx_hash,
+                status=TransactionStatus.ACCEPTED,
+                interval=3000,
+                retries=60,
+                full_transaction=True,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=504,
+                detail=f"tx {tx_hash} sent but did not reach ACCEPTED in time: {e}",
+            )
+
+    exec_name = receipt.get("tx_execution_result_name") or ""
+    if exec_name and "RETURN" not in exec_name.upper():
+        raise HTTPException(
+            status_code=502,
+            detail=f"transaction executed with errors ({exec_name}); tx={tx_hash}",
+        )
+
+    verdict = None
+    try:
+        leader_receipts = receipt.get("consensus_data", {}).get("leader_receipt") or []
+        lr = leader_receipts[0] if leader_receipts else {}
+        val = lr.get("result", lr.get("return_data"))
+        if isinstance(val, bool):
+            verdict = val
+        elif isinstance(val, str) and val.lower() in ("true", "false"):
+            verdict = val.lower() == "true"
+    except Exception:
+        pass
+
+    return {
+        "claim_id": body.claim_id,
+        "tx_hash": tx_hash,
+        "verdict": verdict,
+        "status": "resolved",
+        "contract": GVO_ADDRESS,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Write relay — POST /api/v1/relay/finalize  (close the appeal window)
+# ---------------------------------------------------------------------------
+class FinalizeClaimBody(BaseModel):
+    claim_id: int = Field(..., ge=1)
+
+
+@app.post("/api/v1/relay/finalize")
+def relay_finalize(body: FinalizeClaimBody, request: Request):
+    """Relay finalize_claim(claim_id) — moves a resolved claim to `final`.
+
+    Only valid after the appeal window (default 3600 s) has elapsed; the
+    contract reverts otherwise. Useful for demonstrating the full lifecycle.
+    """
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() \
+        or (request.client.host if request.client else "unknown")
+    if not RATE_LIMITER.allow(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"rate limit exceeded: max {RATE_LIMIT} submissions per "
+                   f"{RATE_WINDOW}s",
+        )
+
+    with _RELAY_LOCK:
+        try:
+            tx_hash = CLIENT.write_contract(
+                address=GVO_ADDRESS,
+                function_name="finalize_claim",
+                account=RELAY_ACCOUNT,
+                args=[body.claim_id],
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"write_contract failed: {e}")
+
+        try:
+            receipt = CLIENT.wait_for_transaction_receipt(
+                transaction_hash=tx_hash,
+                status=TransactionStatus.ACCEPTED,
+                interval=3000,
+                retries=60,
+                full_transaction=True,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=504,
+                detail=f"tx {tx_hash} sent but did not reach ACCEPTED in time: {e}",
+            )
+
+    exec_name = receipt.get("tx_execution_result_name") or ""
+    if exec_name and "RETURN" not in exec_name.upper():
+        raise HTTPException(
+            status_code=502,
+            detail=f"transaction executed with errors ({exec_name}) — e.g. appeal "
+                   f"window still open; tx={tx_hash}",
+        )
+
+    return {
+        "claim_id": body.claim_id,
+        "tx_hash": tx_hash,
+        "status": "final",
+        "contract": GVO_ADDRESS,
+    }

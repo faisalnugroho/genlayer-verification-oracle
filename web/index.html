@@ -3,160 +3,1136 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>GVO — GenLayer Verification Oracle</title>
+<title>GenLayer Verification Oracle (GVO)</title>
+<meta name="description" content="GVO is a shared Intelligent Contract on GenLayer Studionet: validator-consensus verdicts on claims, with deterministic on-chain verification of x402/USDC payments on Base. It's infrastructure, not an app." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2305060a'/%3E%3Cpath d='M8 20 L13 20 L15 12 L18 24 L20 16 L24 16' stroke='%2300FFF0' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 <style>
-  :root { --bg:#0b0f14; --card:#11161d; --border:#1f2833; --text:#e6edf3; --muted:#8b98a5; --accent:#2dd4a7; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
-  .wrap { max-width:960px; margin:0 auto; padding:24px; }
-  header { padding:32px 0 8px; }
-  h1 { font-size:30px; margin:0; letter-spacing:-.3px; }
-  .sub { color:var(--muted); margin:6px 0 0; }
-  .addr { font-family:ui-monospace,Menlo,monospace; font-size:13px; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin:20px 0; }
-  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:20px 0; }
-  .metric { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
-  .metric .k { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
-  .metric .v { font-size:22px; font-weight:650; margin-top:4px; word-break:break-all; }
-  section { margin:34px 0; }
-  h2 { font-size:20px; margin:0 0 12px; border-bottom:1px solid var(--border); padding-bottom:10px; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
-  th { color:var(--muted); font-weight:600; font-size:13px; }
-  .pill { display:inline-block; padding:1px 10px; border-radius:999px; font-size:12px; background:rgba(255,255,255,.07); }
-  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; background:rgba(255,255,255,.05); padding:1px 6px; border-radius:4px; }
-  .note { color:var(--muted); font-size:13px; margin:8px 0; }
-  a { color:var(--accent); }
-  form { display:grid; gap:10px; max-width:660px; }
-  input { background:#0e131a; border:1px solid var(--border); border-radius:6px; padding:9px 12px; color:var(--text); font-size:14px; }
-  button { background:var(--accent); color:#04110c; border:none; border-radius:6px; padding:11px 16px; font-weight:700; cursor:pointer; width:max-content; }
-  .err { color:#ff5c5c; }
+/* ============================================================
+   GVO — Cyber Y2K design system
+   palette: void #05060a · panel #0b0e16 · cyan #00FFF0
+            magenta #FF00E6 · purple #A020F0 · chrome #dfe6f2
+   type:    Orbitron (display) · Chakra Petch (body)
+            Share Tech Mono (data)
+   ============================================================ */
+:root {
+  --void: #05060a;
+  --panel: #0b0e16;
+  --panel2: #0e1220;
+  --line: #1b2233;
+  --cyan: #00FFF0;
+  --magenta: #FF00E6;
+  --purple: #A020F0;
+  --chrome: #dfe6f2;
+  --dim: #8a93ad;
+  --dim2: #5b6480;
+  --ok: #00ff9d;
+  --bad: #ff5470;
+  --mono: "Share Tech Mono", ui-monospace, monospace;
+  --body: "Chakra Petch", system-ui, sans-serif;
+  --disp: "Orbitron", var(--body);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--chrome);
+  font: 16px/1.65 var(--body);
+  overflow-x: hidden;
+}
+::selection { background: rgba(0,255,240,.25); }
+
+/* global chrome grid + scanline atmosphere */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(27,34,51,.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27,34,51,.35) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 75%);
+}
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    rgba(3,5,10,.16) 3px 4px
+  );
+  mix-blend-mode: multiply;
+}
+main { position: relative; z-index: 1; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px; }
+
+/* ── circuit divider ── */
+.circuit { border: 0; height: 26px; margin: 0; flex: none; }
+.circuit path { stroke: var(--line); }
+.circuit .hot { stroke: var(--cyan); filter: drop-shadow(0 0 4px rgba(0,255,240,.6)); }
+.circuit .hot2 { stroke: var(--purple); filter: drop-shadow(0 0 4px rgba(160,32,240,.5)); }
+
+/* ── shared section chrome ── */
+section { padding: 72px 0 8px; }
+.eyebrow {
+  font: 700 11px/1 var(--disp);
+  letter-spacing: .38em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-shadow: 0 0 12px rgba(0,255,240,.55);
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 14px;
+}
+.eyebrow::after { content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, rgba(0,255,240,.5), rgba(0,255,240,0)); }
+h2 {
+  font: 700 clamp(22px, 3.4vw, 30px)/1.15 var(--disp);
+  margin: 0 0 12px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #ffffff 12%, #aeb9d4 55%, #6f7ba0 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,.08));
+}
+.lede { color: var(--dim); max-width: 72ch; margin: 0 0 26px; }
+.lede strong, .lede b { color: var(--chrome); font-weight: 600; }
+.lede code, p code, li code {
+  font-family: var(--mono); font-size: .92em; color: var(--cyan);
+  background: rgba(0,255,240,.06); border: 1px solid rgba(0,255,240,.14);
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+}
+
+/* ══════════ HERO ══════════ */
+.hero { position: relative; padding: 64px 0 74px; overflow: hidden; }
+.hero-grid {
+  position: absolute; left: -30%; right: -30%; bottom: -190px; height: 420px;
+  transform: perspective(560px) rotateX(63deg);
+  background:
+    repeating-linear-gradient(90deg, rgba(0,255,240,.16) 0 1px, transparent 1px 84px),
+    repeating-linear-gradient(0deg, rgba(160,32,240,.20) 0 1px, transparent 1px 84px);
+  mask-image: linear-gradient(to top, transparent 46%, #000 76%, #000);
+  -webkit-mask-image: linear-gradient(to top, transparent 46%, #000 76%, #000);
+  animation: gridrun 14s linear infinite;
+  pointer-events: none;
+}
+@keyframes gridrun { to { background-position: 0 -84px, 0 -84px; } }
+.hero::before {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(52% 34% at 22% 12%, rgba(160,32,240,.16), transparent 70%),
+    radial-gradient(46% 34% at 82% 20%, rgba(0,255,240,.12), transparent 70%),
+    radial-gradient(40% 30% at 50% 110%, rgba(255,0,230,.10), transparent 70%);
+  pointer-events: none;
+}
+.hero .wrap { position: relative; }
+.badges { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 26px; }
+.badge {
+  font: 400 12px/1 var(--mono);
+  color: var(--ok);
+  border: 1px solid rgba(0,255,157,.35);
+  background: rgba(0,255,157,.05);
+  padding: 7px 12px; border-radius: 3px;
+  letter-spacing: .08em; text-transform: uppercase;
+  position: relative;
+}
+.badge.pulse::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ok); margin-right: 8px; vertical-align: 1px;
+  box-shadow: 0 0 8px var(--ok);
+  animation: blink 1.6s ease-in-out infinite;
+}
+@keyframes blink { 50% { opacity: .25; } }
+.badge.violet { color: var(--purple); border-color: rgba(160,32,240,.4); background: rgba(160,32,240,.07); }
+.badge.mut { color: var(--dim); border-color: var(--line); background: transparent; }
+h1 {
+  font: 900 clamp(34px, 6.4vw, 72px)/1.04 var(--disp);
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: .01em;
+  background: linear-gradient(
+    100deg,
+    #f4f8ff 0%, #cfd9ee 18%, #8fd8ff 34%,
+    #ffffff 46%, #b6a8ff 58%,
+    #ff9df2 72%, #dfe6f2 88%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: holo 9s linear infinite;
+  filter: drop-shadow(0 0 26px rgba(0,255,240,.14));
+}
+@keyframes holo { to { background-position: 220% 0; } }
+.hero-sub {
+  font: 500 clamp(17px, 2.6vw, 24px)/1.4 var(--body);
+  color: var(--chrome);
+  margin: 10px 0 4px;
+}
+.hero-sub em { color: var(--cyan); font-style: normal; text-shadow: 0 0 14px rgba(0,255,240,.5); }
+.hero-tag { color: var(--dim); max-width: 66ch; margin: 12px 0 30px; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+
+/* chrome bevel button */
+.btn {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 10px;
+  font: 700 14px/1 var(--disp);
+  letter-spacing: .12em; text-transform: uppercase;
+  color: #05060a;
+  padding: 15px 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.55);
+  background: linear-gradient(180deg, #eafcff 0%, #9ff5ee 38%, #00e5d4 60%, #0bb8ad 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.9),
+    inset 0 -2px 0 rgba(0,0,0,.28),
+    0 0 22px rgba(0,255,240,.35),
+    0 6px 18px rgba(0,0,0,.5);
+  cursor: pointer; text-decoration: none;
+  transition: transform .12s, box-shadow .12s, filter .12s;
+}
+.btn:hover { transform: translateY(-2px); filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -2px 0 rgba(0,0,0,.28),
+  0 0 34px rgba(0,255,240,.6), 0 8px 22px rgba(0,0,0,.55); }
+.btn:active { transform: translateY(0); }
+.btn.mg {
+  color: #fff;
+  border-color: rgba(255,255,255,.35);
+  background: linear-gradient(180deg, #f6dbff 0%, #cf7bff 38%, #a020f0 60%, #7a18c4 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), inset 0 -2px 0 rgba(0,0,0,.3),
+  0 0 22px rgba(160,32,240,.4), 0 6px 18px rgba(0,0,0,.5);
+}
+.btn.ghost {
+  color: var(--chrome);
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(223,230,242,.08), rgba(223,230,242,.02));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+.btn.ghost:hover { border-color: rgba(0,255,240,.4); color: var(--cyan);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 0 22px rgba(0,255,240,.18); }
+.btn:focus-visible, a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .copy:focus-visible, .chip:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: 2px;
+}
+.btn .arr { font-family: var(--mono); font-size: 15px; }
+
+/* glitch hover on hero title */
+h1:hover { animation: holo 9s linear infinite, glitch .32s steps(2) 1; }
+@keyframes glitch {
+  0% { transform: translateX(0); filter: drop-shadow(0 0 26px rgba(0,255,240,.14)); }
+  25% { transform: translateX(-3px); filter: drop-shadow(3px 0 0 rgba(255,0,230,.5)) drop-shadow(-3px 0 0 rgba(0,255,240,.5)); }
+  50% { transform: translateX(2px); filter: drop-shadow(-2px 0 0 rgba(255,0,230,.5)) drop-shadow(2px 0 0 rgba(0,255,240,.5)); }
+  100% { transform: translateX(0); filter: drop-shadow(0 0 26px rgba(0,255,240,.14)); }
+}
+
+/* hero stat strip */
+.hero-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 46px; }
+.stat {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(14,18,32,.9), rgba(8,10,18,.9));
+  padding: 14px 16px 12px;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.stat::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple), var(--magenta));
+  opacity: .7;
+}
+.stat .k { font: 400 10.5px/1.2 var(--mono); color: var(--dim); letter-spacing: .16em; text-transform: uppercase; }
+.stat .v { font: 700 26px/1.1 var(--disp); color: var(--cyan); margin-top: 6px;
+  text-shadow: 0 0 16px rgba(0,255,240,.45); font-variant-numeric: tabular-nums; }
+.stat .v.mg { color: var(--magenta); text-shadow: 0 0 16px rgba(255,0,230,.45); }
+.stat .v.pp { color: var(--purple); text-shadow: 0 0 16px rgba(160,32,240,.45); }
+.stat .v.ch { color: var(--chrome); text-shadow: none; }
+@media (max-width: 760px) { .hero-stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* ══════════ PANELS / CARDS ══════════ */
+.card {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(14,18,32,.85), rgba(8,10,18,.92));
+  border-radius: 6px;
+  padding: 22px;
+  position: relative;
+}
+.card .card-h {
+  font: 700 13px/1 var(--disp); letter-spacing: .18em; text-transform: uppercase;
+  color: var(--chrome); margin: 0 0 4px;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+/* glow-animated border for status cards */
+.glowcard { position: relative; }
+.glowcard::after {
+  content: ""; position: absolute; inset: -1px; border-radius: 7px; padding: 1px;
+  background: linear-gradient(120deg, rgba(0,255,240,.55), rgba(160,32,240,.45), rgba(255,0,230,.4), rgba(0,255,240,.55));
+  background-size: 260% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: borderflow 5.5s linear infinite;
+  pointer-events: none;
+}
+@keyframes borderflow { to { background-position: 260% 0; } }
+
+/* ══════════ HOW IT WORKS — paths ══════════ */
+.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+@media (max-width: 900px) { .paths { grid-template-columns: 1fr; } }
+.pathcard {
+  border: 1px solid var(--line); border-radius: 6px;
+  background: linear-gradient(180deg, rgba(13,17,30,.9), rgba(7,9,16,.95));
+  padding: 24px; position: relative; overflow: hidden;
+}
+.pathcard::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.pathcard.pa::before { background: linear-gradient(90deg, var(--cyan), transparent 80%); box-shadow: 0 0 14px rgba(0,255,240,.5); }
+.pathcard.pb::before { background: linear-gradient(90deg, var(--magenta), transparent 80%); box-shadow: 0 0 14px rgba(255,0,230,.5); }
+.path-tag {
+  display: inline-block; font: 700 11px/1 var(--disp); letter-spacing: .2em;
+  padding: 6px 10px; border-radius: 3px; margin-bottom: 14px;
+}
+.pathcard.pa .path-tag { color: var(--cyan); border: 1px solid rgba(0,255,240,.4); background: rgba(0,255,240,.06); }
+.pathcard.pb .path-tag { color: var(--magenta); border: 1px solid rgba(255,0,230,.4); background: rgba(255,0,230,.06); }
+.pathcard h3 { font: 700 17px/1.3 var(--disp); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+.pathcard.pa h3 { color: #baf7ff; }
+.pathcard.pb h3 { color: #ffc4f6; }
+.pathcard p { color: var(--dim); font-size: 14.5px; margin: 0 0 18px; }
+
+/* neon step flow */
+.steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.steps li {
+  position: relative;
+  padding: 0 0 22px 46px;
+  font-size: 14.5px; color: var(--chrome);
+}
+.steps li::before {           /* node */
+  content: ""; position: absolute; left: 8px; top: 5px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--panel);
+  z-index: 2;
+}
+.pathcard.pa .steps li::before { border: 2px solid var(--cyan); box-shadow: 0 0 10px rgba(0,255,240,.7); }
+.pathcard.pb .steps li::before { border: 2px solid var(--magenta); box-shadow: 0 0 10px rgba(255,0,230,.7); }
+.steps li::after {             /* wire */
+  content: ""; position: absolute; left: 12px; top: 18px; bottom: -4px; width: 2px;
+  background: var(--line);
+}
+.steps li:last-child { padding-bottom: 4px; }
+.steps li:last-child::after { display: none; }
+.pathcard.pa .steps li::after { background: linear-gradient(180deg, rgba(0,255,240,.5), var(--line)); }
+.pathcard.pb .steps li::after { background: linear-gradient(180deg, rgba(255,0,230,.5), var(--line)); }
+.steps .st { font-weight: 600; color: #fff; }
+.steps .sub { display: block; color: var(--dim); font-size: 13px; margin-top: 2px; }
+.steps code { white-space: normal; }
+.gate {
+  margin-top: 18px; border: 1px dashed rgba(255,0,230,.45); border-radius: 4px;
+  padding: 12px 14px; background: rgba(255,0,230,.04);
+  font-size: 13.5px; color: #ffb9ee;
+}
+.gate b { color: var(--magenta); }
+
+/* ══════════ CONSOLE (claim browser) ══════════ */
+.console {
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: #060810;
+  box-shadow: 0 0 44px rgba(0,255,240,.05), inset 0 0 80px rgba(2,4,10,.9);
+}
+.console-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, #141a2c, #0d1120);
+  border-bottom: 1px solid var(--line);
+  padding: 9px 14px;
+}
+.console-bar .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.console-bar .dot.r { background: #ff5f57; } .console-bar .dot.y { background: #febc2e; } .console-bar .dot.g { background: #28c840; }
+.console-title {
+  font: 400 12.5px/1 var(--mono); color: var(--dim); letter-spacing: .1em;
+  margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.console-title b { color: var(--cyan); font-weight: 400; }
+.console-body { padding: 18px; }
+@media (max-width: 700px) { .console-body { padding: 12px; } }
+
+.claim {
+  border: 1px solid var(--line); border-radius: 5px;
+  background: rgba(10,13,24,.65);
+  padding: 14px 16px; margin-bottom: 12px;
+  position: relative;
+}
+.claim:last-child { margin-bottom: 0; }
+.claim-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+.claim-id {
+  font: 700 13px/1 var(--mono); color: var(--cyan);
+  text-shadow: 0 0 10px rgba(0,255,240,.4);
+}
+.claim-cat {
+  font: 400 11.5px/1 var(--mono); color: var(--dim);
+  border: 1px solid var(--line); padding: 3px 8px; border-radius: 3px;
+}
+.claim-desc { color: var(--chrome); font-size: 14.5px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.claim-reason { color: var(--dim2); font-size: 12.5px; margin: 6px 0 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.claim-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px;
+  font: 400 11.5px/1.5 var(--mono); color: var(--dim2); }
+.claim-meta a { color: var(--purple); text-decoration: none; }
+.claim-meta a:hover { color: var(--magenta); }
+
+.pill {
+  font: 400 11px/1 var(--mono); padding: 4px 10px; border-radius: 999px;
+  letter-spacing: .1em; text-transform: uppercase; border: 1px solid;
+}
+.pill.pending { color: #ffd76e; border-color: rgba(255,215,110,.4); background: rgba(255,215,110,.06); }
+.pill.resolved { color: var(--cyan); border-color: rgba(0,255,240,.4); background: rgba(0,255,240,.06); }
+.pill.final { color: var(--purple); border-color: rgba(160,32,240,.5); background: rgba(160,32,240,.08); }
+.pill.appealed { color: var(--magenta); border-color: rgba(255,0,230,.45); background: rgba(255,0,230,.07); }
+.pill.vtrue { color: var(--ok); border-color: rgba(0,255,157,.5); background: rgba(0,255,157,.08); text-shadow: 0 0 8px rgba(0,255,157,.5); }
+.pill.vfalse { color: var(--bad); border-color: rgba(255,84,112,.5); background: rgba(255,84,112,.08); text-shadow: 0 0 8px rgba(255,84,112,.5); }
+.pill.vnone { color: var(--dim2); border-color: var(--line); }
+
+.claim-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  font: 400 11.5px/1 var(--mono); color: var(--dim);
+  border: 1px solid var(--line); background: rgba(223,230,242,.03);
+  padding: 6px 12px; border-radius: 3px; cursor: pointer;
+  transition: color .12s, border-color .12s, box-shadow .12s;
+  letter-spacing: .06em;
+}
+.chip:hover { color: var(--cyan); border-color: rgba(0,255,240,.5); box-shadow: 0 0 12px rgba(0,255,240,.2); }
+.chip:disabled { opacity: .45; cursor: wait; }
+.chip.ok { color: var(--ok); border-color: rgba(0,255,157,.5); }
+.chip.mgc { color: var(--purple); }
+.chip.mgc:hover { color: var(--magenta); border-color: rgba(255,0,230,.5); box-shadow: 0 0 12px rgba(255,0,230,.2); }
+
+/* filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.filters .chip.on { color: var(--cyan); border-color: rgba(0,255,240,.55); background: rgba(0,255,240,.07); box-shadow: 0 0 10px rgba(0,255,240,.15); }
+
+/* demo-data watermark */
+.demo-mark {
+  font: 400 11px/1 var(--mono); color: #ffd76e; letter-spacing: .12em;
+  border: 1px dashed rgba(255,215,110,.5); border-radius: 3px;
+  padding: 8px 12px; margin: 0 0 14px; display: inline-block;
+  background: rgba(255,215,110,.04);
+}
+
+/* ══════════ FORM ══════════ */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field.full { grid-column: 1 / -1; }
+.field label {
+  font: 400 12px/1 var(--mono); color: var(--dim); letter-spacing: .14em; text-transform: uppercase;
+}
+.field label .opt { color: var(--dim2); text-transform: none; letter-spacing: .04em; }
+.field input, .field textarea, .field select {
+  font: 400 14px/1.5 var(--mono);
+  color: var(--chrome);
+  background: #070a13;
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 11px 12px;
+  transition: border-color .12s, box-shadow .12s;
+  width: 100%;
+}
+.field textarea { resize: vertical; min-height: 68px; }
+.field input:hover, .field textarea:hover, .field select:hover { border-color: #2a3450; }
+.field input:focus, .field textarea:focus, .field select:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px rgba(0,255,240,.35), 0 0 18px rgba(0,255,240,.12);
+  outline: none;
+}
+.field input::placeholder, .field textarea::placeholder { color: #3d4560; }
+.hint { font: 400 11.5px/1.5 var(--mono); color: var(--dim2); }
+.pathb-note {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(255,0,230,.3); border-radius: 4px;
+  background: rgba(255,0,230,.04);
+  padding: 10px 14px; font-size: 13px; color: #ffb9ee;
+}
+.ratelimit {
+  grid-column: 1 / -1; margin: 0;
+  font: 400 12px/1.6 var(--mono); color: var(--dim2);
+}
+.ratelimit b { color: #ffd76e; font-weight: 400; }
+
+/* form result readout */
+.readout {
+  margin-top: 18px; border: 1px solid var(--line); border-radius: 5px;
+  background: #060810; font: 400 13px/1.7 var(--mono);
+  padding: 14px 16px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--dim); display: none;
+}
+.readout.show { display: block; }
+.readout .ok { color: var(--ok); }
+.readout .err { color: var(--bad); }
+.readout .cy { color: var(--cyan); }
+.readout a { color: var(--purple); }
+
+/* spinner */
+.spin {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid rgba(0,255,240,.25); border-top-color: var(--cyan);
+  animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 7px;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ══════════ TERMINAL (contract address) ══════════ */
+.term {
+  border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  background: #060810;
+}
+.term-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, #12182a, #0b0f1d);
+  font: 400 12px/1 var(--mono); color: var(--dim);
+}
+.term-body { padding: 16px; font: 400 13.5px/1.9 var(--mono); }
+.term-body .lbl { color: var(--dim2); }
+.term-body .val { color: var(--chrome); overflow-wrap: anywhere; }
+.term-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.copy {
+  font: 400 11.5px/1 var(--mono); color: var(--cyan);
+  border: 1px solid rgba(0,255,240,.35); background: rgba(0,255,240,.05);
+  padding: 5px 10px; border-radius: 3px; cursor: pointer; letter-spacing: .06em;
+  transition: box-shadow .12s;
+}
+.copy:hover { box-shadow: 0 0 12px rgba(0,255,240,.25); }
+.copy.did { border-color: rgba(255,0,230,.35); color: var(--magenta); background: rgba(255,0,230,.05); }
+.copy.did:hover { box-shadow: 0 0 12px rgba(255,0,230,.25); }
+
+/* link cards */
+.links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 800px) { .links { grid-template-columns: 1fr; } }
+.linkcard {
+  display: block; text-decoration: none;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: linear-gradient(180deg, rgba(14,18,32,.85), rgba(8,10,18,.9));
+  padding: 18px 20px; position: relative; overflow: hidden;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.linkcard::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--cyan), var(--purple));
+  opacity: 0; transition: opacity .15s;
+}
+.linkcard:hover { border-color: rgba(0,255,240,.35); transform: translateY(-2px);
+  box-shadow: 0 0 24px rgba(0,255,240,.1); }
+.linkcard:hover::before { opacity: 1; }
+.linkcard .t { font: 700 14px/1.3 var(--disp); letter-spacing: .06em; color: var(--chrome); text-transform: uppercase; }
+.linkcard .d { font: 400 12px/1.6 var(--mono); color: var(--dim); margin-top: 6px; }
+.linkcard .u { font: 400 11.5px/1.6 var(--mono); color: var(--purple); margin-top: 8px; overflow-wrap: anywhere; }
+
+/* ══════════ REPRODUCE panel ══════════ */
+.repro {
+  border: 1px solid rgba(0,255,240,.28); border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(0,255,240,.045), rgba(5,6,10,0) 30%),
+    linear-gradient(180deg, rgba(14,18,32,.9), rgba(8,10,18,.95));
+  padding: 24px;
+}
+.repro ol { margin: 0; padding-left: 0; list-style: none; counter-reset: rstep; }
+.repro li {
+  counter-increment: rstep; position: relative;
+  padding: 0 0 20px 52px; color: var(--chrome); font-size: 15px;
+}
+.repro li::before {
+  content: counter(rstep, decimal-leading-zero);
+  position: absolute; left: 0; top: 0;
+  font: 700 15px/1 var(--disp); color: var(--cyan);
+  border: 1px solid rgba(0,255,240,.4); border-radius: 3px;
+  padding: 7px 9px; letter-spacing: .05em;
+  text-shadow: 0 0 10px rgba(0,255,240,.5);
+}
+.repro li::after {
+  content: ""; position: absolute; left: 21px; top: 42px; bottom: 2px; width: 1px;
+  background: linear-gradient(180deg, rgba(0,255,240,.4), transparent);
+}
+.repro li:last-child::after { display: none; }
+.repro li b { color: #fff; }
+.repro .sub { display: block; color: var(--dim); font-size: 13px; margin-top: 3px; }
+kbd {
+  font: 400 12px/1 var(--mono); color: var(--magenta);
+  border: 1px solid rgba(255,0,230,.35); background: rgba(255,0,230,.05);
+  padding: 2px 7px; border-radius: 3px;
+}
+
+/* ══════════ LIMITATIONS ══════════ */
+.lims { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 800px) { .lims { grid-template-columns: 1fr; } }
+.lim {
+  border: 1px solid var(--line); border-radius: 5px; padding: 16px 18px;
+  background: rgba(10,13,24,.5);
+}
+.lim .lt { font: 600 14px/1.4 var(--body); color: var(--chrome); margin-bottom: 6px; }
+.lim .lt::before { content: "▮ "; color: var(--magenta); font-size: 11px; }
+.lim p { margin: 0; color: var(--dim); font-size: 13.5px; }
+
+/* appeal section */
+.timeline { display: flex; align-items: stretch; gap: 0; margin-top: 20px; flex-wrap: wrap; }
+.tseg {
+  flex: 1 1 180px; border: 1px solid var(--line); padding: 16px;
+  position: relative; background: rgba(10,13,24,.5);
+}
+.tseg + .tseg { border-left: 0; }
+.tseg .tt { font: 700 12px/1 var(--disp); letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
+.tseg p { margin: 0; color: var(--dim); font-size: 13.5px; }
+.tseg .mono { font: 400 12px/1.7 var(--mono); color: var(--chrome); }
+@media (max-width: 760px) { .tseg + .tseg { border-left: 1px solid var(--line); border-top: 0; } .tseg { flex-basis: 100%; } }
+
+/* footer */
+footer { border-top: 1px solid var(--line); margin-top: 80px; padding: 34px 0 46px; }
+.foot { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; align-items: center; }
+.foot .l { font: 400 12px/1.8 var(--mono); color: var(--dim2); }
+.foot .l b { color: var(--dim); font-weight: 400; }
+.foot .r { display: flex; gap: 18px; }
+.foot a { color: var(--dim); font: 400 12.5px/1 var(--mono); text-decoration: none; }
+.foot a:hover { color: var(--cyan); }
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-<header>
-  <h1>GVO — GenLayer Verification Oracle</h1>
-  <p class="sub">A shared Intelligent Contract. Post a claim once; any contract reads the verdict.</p>
+<main>
+
+<!-- ══════════════════ HERO ══════════════════ -->
+<header class="hero">
+  <div class="hero-grid" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="badges">
+      <span class="badge pulse" id="netBadge">LIVE ON STUDIONET · CHAIN ID 61999</span>
+      <span class="badge violet">GENLAYER INTELLIGENT CONTRACT</span>
+      <span class="badge mut">APPEAL WINDOW 3600s</span>
+    </div>
+    <h1>GenLayer<br/>Verification Oracle</h1>
+    <p class="hero-sub">Validator-consensus verdicts for the agentic economy — <em>with deterministic on-chain proof of x402&nbsp;/&nbsp;USDC payments on Base.</em></p>
+    <p class="hero-tag">Post a claim once. Any contract — escrow, x402 dispute flow, reputation system, DAO proposal — reads the same verdict instead of re-implementing its own AI judgment layer. It's infrastructure, not an app.</p>
+    <div class="cta-row">
+      <a class="btn" href="#submit">Submit a Claim <span class="arr">▶</span></a>
+      <a class="btn mg" href="https://genlayer-explorer.vercel.app/contract/0xE6f6C5130452312A83eB32883fe223271EF2517B" target="_blank" rel="noopener">View Live Contract</a>
+      <a class="btn ghost" href="#reproduce">How to reproduce a verdict</a>
+    </div>
+
+    <div class="hero-stats" id="heroStats">
+      <div class="stat"><div class="k">total claims</div><div class="v ch" id="m_claims">—</div></div>
+      <div class="stat"><div class="k">resolved</div><div class="v" id="m_resolved">—</div></div>
+      <div class="stat"><div class="k">approval rate</div><div class="v mg" id="m_approval">—</div></div>
+      <div class="stat"><div class="k">appeals</div><div class="v pp" id="m_appeals">—</div></div>
+    </div>
+  </div>
 </header>
 
-<div class="addr" id="contractAddr"></div>
+<svg class="circuit" width="100%" height="26" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 13 H130 L150 3 H260 L280 23 H420 L440 13 H100%" fill="none" class="hot" stroke-width="1.4"/>
+  <path d="M0 23 H80 L100 13 H200 L220 3 H330 L350 23 H100%" fill="none" class="hot2" stroke-width="1.2" opacity=".5"/>
+</svg>
 
-<div class="metrics" id="metrics">
-  <div class="metric"><div class="k">live claims</div><div class="v" id="m_claim_count">…</div></div>
-  <div class="metric"><div class="k">resolved</div><div class="v" id="m_total_resolved">…</div></div>
-  <div class="metric"><div class="k">appeals</div><div class="v" id="m_total_appeals">…</div></div>
-  <div class="metric"><div class="k">approval %</div><div class="v" id="m_approval_rate">…</div></div>
-</div>
-
-<section>
-  <h2>New claim</h2>
-  <p class="note">Submits via the backend relay (POST /api/v1/relay/submit), which signs and sends the transaction with its own funded account. For x402/USDC payment claims, fill the payment fields — the contract verifies them against Base chain data before consulting the LLM.</p>
-  <form id="newClaim">
-    <label>category <input name="category" placeholder="x402-dispute" ></label>
-    <label>description <input name="description" placeholder="state the claim" ></label>
-    <label>criteria <input name="criteria" placeholder="what counts as satisfying the claim" ></label>
-    <label>evidence_url <input name="evidence_url" placeholder="public, ideally immutable URL" ></label>
-    <label>tx_hash (optional — Base tx for payment claims) <input name="tx_hash" placeholder="0x..." ></label>
-    <label>payer (optional) <input name="payer" placeholder="0x sender address" ></label>
-    <label>recipient (optional) <input name="recipient" placeholder="0x recipient address" ></label>
-    <label>amount (optional — USDC base units) <input name="amount" placeholder="e.g. 2000 = $0.002" ></label>
-    <button type="submit">Post claim</button>
-  </form>
+<!-- ══════════════════ PROBLEM ══════════════════ -->
+<section id="problem">
+  <div class="wrap">
+    <div class="eyebrow">01 · The missing layer</div>
+    <h2>Agentic commerce ships the happy path. Nobody ships the argument.</h2>
+    <p class="lede">Every standard racing out right now — <code>x402</code> (agent payments), <code>ERC-8004</code> (agent identity), <code>A2A</code> (agent-to-agent tasks) — engineers the moment everything works and leaves the moment of disagreement as someone else's problem: <strong>was the task actually done? was the claim true? did the payment actually happen?</strong></p>
+    <div class="grid3">
+      <div class="card"><div class="card-h">Duplicated</div><p style="color:var(--dim);margin:10px 0 0;font-size:14px">Every escrow or dispute flow re-implements its own AI-verification logic inside its own contract. Same work, again and again.</p></div>
+      <div class="card"><div class="card-h">Isolated</div><p style="color:var(--dim);margin:10px 0 0;font-size:14px">No shared trust surface between projects — one agent's "verified" means nothing to another contract.</p></div>
+      <div class="card glowcard"><div class="card-h" style="color:var(--cyan)">Shared by GVO</div><p style="color:var(--dim);margin:10px 0 0;font-size:14px">Post a claim once, get a validator-consensus verdict once — any number of downstream contracts read the same answer.</p></div>
+    </div>
+  </div>
 </section>
 
-<h2>Browse claims</h2>
-<p class="note" id="claimsStatus">Loading…</p>
-<table id="claimsTable"><thead><tr><th>ID</th><th>Category</th><th>Status</th><th>Verdict</th><th>Description</th></tr></thead><tbody></tbody></table>
-<p class="note" id="req">…</p>
-</div>
+<!-- ══════════════════ HOW IT WORKS ══════════════════ -->
+<section id="how">
+  <div class="wrap">
+    <div class="eyebrow">02 · Verification paths</div>
+    <h2>Two paths. One verdict surface.</h2>
+    <p class="lede"><code>resolve_claim</code> runs GenLayer validator consensus. Which path executes depends on whether the claim carries a <code>tx_hash</code>:</p>
+
+    <div class="paths">
+      <div class="pathcard pa">
+        <span class="path-tag">PATH A · EVIDENCE-ONLY</span>
+        <h3>LLM judgment vs. criteria</h3>
+        <p>No payment asserted — the claim is judged on its evidence.</p>
+        <ol class="steps">
+          <li><span class="st">Submit</span>category · description · criteria · evidence_url<span class="sub">anyone, via the relay below — no key needed</span></li>
+          <li><span class="st">Leader fetches evidence</span><code>evidence_url</code> is retrieved and shown to the LLM<span class="sub">validators re-run the fetch independently</span></li>
+          <li><span class="st">LLM verdict vs. criteria</span>does the evidence satisfy the stated criteria?<span class="sub">strict boolean parse — the string "false" can't masquerade as true</span></li>
+          <li><span class="st">Partial-field equivalence</span>validators compare only the verdict field<span class="sub">reasoning may differ without breaking consensus</span></li>
+        </ol>
+      </div>
+
+      <div class="pathcard pb">
+        <span class="path-tag">PATH B · x402 / USDC PAYMENT</span>
+        <h3>On-chain gate, then judgment</h3>
+        <p>A payment is asserted — the chain proves it before any LLM runs.</p>
+        <ol class="steps">
+          <li><span class="st">Validator fetches Base</span><code>eth_getTransactionReceipt</code> + <code>eth_blockNumber</code> via public Base RPC<span class="sub">each validator, independently</span></li>
+          <li><span class="st">Extract USDC transfers</span>ERC-20 <code>Transfer</code> events from the native USDC contract on Base<span class="sub">0x8335…2913 · from / to / value from raw logs</span></li>
+          <li><span class="st">Exact-match assertion gate</span>payer · recipient · amount must match exactly (0 tolerance) + ≥5 confirmations<span class="sub">also matches the right transfer among many in one tx</span></li>
+          <li><span class="st">Then the LLM judges the claim</span>payment proven, does the rest of the claim hold?</li>
+        </ol>
+        <div class="gate"><b>GATE FAILS → VERDICT FALSE.</b> Wrong amount, wrong payer, nonexistent tx, non-USDC token, too few confirmations — the LLM is never consulted. Facts first, opinion second.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ LIVE CONSOLE ══════════════════ -->
+<section id="console">
+  <div class="wrap">
+    <div class="eyebrow">03 · Live data</div>
+    <h2>Claim browser</h2>
+    <p class="lede">Mirrored from the live contract by the indexer (SQLite read API). <span id="srcNote" style="color:var(--dim2)">connecting…</span></p>
+
+    <div class="console">
+      <div class="console-bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="console-title">gvo://studionet/claims — <b id="consoleCount">…</b></span>
+      </div>
+      <div class="console-body">
+        <div id="demoBadge" class="demo-mark" style="display:none">⚠ DEMO DATA — backend unreachable, showing sample claims only</div>
+        <div class="filters" id="filters">
+          <button class="chip on" data-status="">ALL</button>
+          <button class="chip" data-status="pending">PENDING</button>
+          <button class="chip" data-status="resolved">RESOLVED</button>
+          <button class="chip" data-status="final">FINAL</button>
+        </div>
+        <div id="claimList"><div style="color:var(--dim2);font:400 13px/1.8 var(--mono)">loading claim data…</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ SUBMIT ══════════════════ -->
+<section id="submit">
+  <div class="wrap">
+    <div class="eyebrow">04 · Write path</div>
+    <h2>Submit a claim</h2>
+    <p class="lede">This form posts to the backend relay (<code>POST /api/v1/relay/submit</code>), which signs and sends the <code>submit_claim</code> transaction with its own funded Studionet account — <strong>your browser never holds a key.</strong> The claim ID comes back on-chain.</p>
+
+    <div class="card">
+      <form id="claimForm" class="form-grid" novalidate>
+        <div class="field">
+          <label for="f_category">category</label>
+          <input id="f_category" name="category" required maxlength="100" placeholder="x402-dispute" value="x402-demo" />
+        </div>
+        <div class="field">
+          <label for="f_evidence">evidence_url <span class="opt">— public, ideally immutable</span></label>
+          <input id="f_evidence" name="evidence_url" required type="url" maxlength="500" placeholder="https://…" value="https://raw.githubusercontent.com/faisalnugroho/genlayer-verification-oracle/main/examples/evidence-demo.txt" />
+        </div>
+        <div class="field full">
+          <label for="f_description">description <span class="opt">— state the claim</span></label>
+          <textarea id="f_description" name="description" required maxlength="2000" placeholder="What is being claimed?">A $0.002 USDC payment was made on Base as consideration for the demo service described in the evidence URL.</textarea>
+        </div>
+        <div class="field full">
+          <label for="f_criteria">criteria <span class="opt">— what counts as satisfying the claim</span></label>
+          <textarea id="f_criteria" name="criteria" required maxlength="2000" placeholder="The claim is TRUE if…">The claim is TRUE if the stated on-chain payment exists and matches the payer, recipient, and amount asserted, and the evidence describes the service it paid for.</textarea>
+        </div>
+
+        <div class="pathb-note">PATH B — leave <b>tx_hash empty</b> for an evidence-only claim (Path A). Fill all four payment fields to trigger the deterministic Base USDC gate (Path B).</div>
+
+        <div class="field">
+          <label for="f_tx">tx_hash <span class="opt">— Base tx of the USDC payment</span></label>
+          <input id="f_tx" name="tx_hash" maxlength="80" placeholder="0x… (empty = Path A)" />
+        </div>
+        <div class="field">
+          <label for="f_amount">amount <span class="opt">— USDC base units (6 decimals)</span></label>
+          <input id="f_amount" name="amount" maxlength="40" placeholder="e.g. 2000 = $0.002" />
+        </div>
+        <div class="field">
+          <label for="f_payer">payer <span class="opt">— sender address</span></label>
+          <input id="f_payer" name="payer" maxlength="60" placeholder="0x…" />
+        </div>
+        <div class="field">
+          <label for="f_recipient">recipient <span class="opt">— recipient address</span></label>
+          <input id="f_recipient" name="recipient" maxlength="60" placeholder="0x…" />
+        </div>
+
+        <p class="ratelimit">⏱ rate limit: <b>5 submissions / IP / 10 min</b> — each relayed tx spends the relay account's gas.<br/>amount is an integer string in base units (USDC has 6 decimals, so 2000 = $0.002).</p>
+
+        <div class="field full" style="align-items:flex-start">
+          <button class="btn" type="submit" id="submitBtn" style="width:max-content">Submit claim <span class="arr">▶</span></button>
+        </div>
+      </form>
+      <div class="readout" id="formOut" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ REPRODUCE ══════════════════ -->
+<section id="reproduce">
+  <div class="wrap">
+    <div class="eyebrow">05 · Reproducible outcome</div>
+    <h2>Reproduce a verification yourself</h2>
+    <p class="lede">The full lifecycle runs from this page — no wallet, no CLI, no key. Follow these steps and you will observe the same verdict any other user gets for the same facts:</p>
+    <div class="repro">
+      <ol>
+        <li><b>Submit the claim.</b> Fill the form above and press <kbd>Submit claim</kbd>.<span class="sub">Leave tx_hash empty (Path A) or fill all four payment fields (Path B) — the readout returns your claim ID + tx hash.</span></li>
+        <li><b>Resolve it.</b> Find your claim in the <a href="#console" style="color:var(--cyan)">claim browser</a> (status PENDING) and press <kbd>RESOLVE</kbd>.<span class="sub">This relays <code style="white-space:normal">resolve_claim(claim_id)</code> — validator consensus runs: evidence fetch (and Base USDC gate if Path B), then LLM judgment. Takes ~1–2 minutes.</span></li>
+        <li><b>Read the verdict.</b> The claim row updates to RESOLVED with verdict TRUE or FALSE, plus the validators' reasoning.<span class="sub">Path B note: if the payer/recipient/amount don't match the Base tx exactly, the verdict is FALSE and the reasoning says why — that's the gate working.</span></li>
+        <li><b>(Optional) Finalize.</b> After the appeal window (3600 s) elapses, press <kbd>FINALIZE</kbd> on the claim to move it to FINAL — the status a consumer contract acts on.<span class="sub"><code style="white-space:normal">finalize_claim(claim_id)</code> reverts while the window is still open — try it early and watch the guard fire.</span></li>
+        <li><b>Verify independently.</b> Cross-check on-chain: the Studionet explorer link in the claim row opens the exact transaction; the repo README documents the same flow via <code>exercise_live.py</code>.<span class="sub">Same facts in → same verdict out, for you or anyone else.</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ APPEAL & FINALIZATION ══════════════════ -->
+<section id="appeal">
+  <div class="wrap">
+    <div class="eyebrow">06 · Dispute lifecycle</div>
+    <h2>Appeal &amp; finalization</h2>
+    <p class="lede">A verdict isn't the end. Anyone can stake GEN to re-run the judgment (<code>appeal_claim</code>). Flip the verdict and your stake is refundable; hold it and the stake forfeits — split 50/50 between the original resolver and the treasury.</p>
+    <div class="timeline">
+      <div class="tseg"><div class="tt">T+0 · Resolve</div><p class="mono">status: resolved<br/>verdict recorded on-chain</p><p>The appeal clock starts at the node-assigned transaction timestamp — not client-supplied, so it can't be gamed.</p></div>
+      <div class="tseg"><div class="tt">T≤3600s · Appeal open</div><p class="mono">appeal_claim(id) with stake<br/>re-runs consensus</p><p>Submit throwaway claims all you want — nobody's deadline moves.</p></div>
+      <div class="tseg"><div class="tt">T&gt;3600s · Finalize</div><p class="mono">finalize_claim(id) — anyone<br/>status: final</p><p>Consumer contracts: act only on <span style="color:var(--purple)">final</span>. <span style="color:var(--cyan)">resolved</span> can still change.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ TECH & LINKS ══════════════════ -->
+<section id="tech">
+  <div class="wrap">
+    <div class="eyebrow">07 · Tech &amp; links</div>
+    <h2>Contract &amp; stack</h2>
+    <div class="grid2" style="margin-bottom:16px">
+      <div class="term">
+        <div class="term-bar"><span class="dot r" style="width:9px;height:9px;border-radius:50%;background:#ff5f57"></span><span style="color:var(--dim);font:400 12px/1 var(--mono)">studionet — gvo@latest</span></div>
+        <div class="term-body">
+          <div class="term-row"><span class="lbl">contract&nbsp;&nbsp;→</span><span class="val" id="addrText">0xE6f6C5130452312A83eB32883fe223271EF2517B</span><button class="copy" data-copy="0xE6f6C5130452312A83eB32883fe223271EF2517B">COPY</button></div>
+          <div class="term-row"><span class="lbl">chain&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→</span><span class="val">GenLayer Studionet · id 61999</span></div>
+          <div class="term-row"><span class="lbl">rpc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→</span><span class="val">https://studio.genlayer.com/api</span></div>
+          <div class="term-row"><span class="lbl">usdc&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→</span><span class="val">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (Base)</span></div>
+          <div class="term-row"><span class="lbl">relay&nbsp;&nbsp;&nbsp;&nbsp;→</span><span class="val" id="relayAddr">…</span></div>
+        </div>
+      </div>
+      <div class="links" style="grid-template-columns:1fr">
+        <a class="linkcard" href="https://github.com/faisalnugroho/genlayer-verification-oracle" target="_blank" rel="noopener">
+          <div class="t">GitHub repo</div>
+          <div class="d">contract · backend · indexer · tests (24) · deploy scripts</div>
+          <div class="u">github.com/faisalnugroho/genlayer-verification-oracle</div>
+        </a>
+        <a class="linkcard" href="https://genlayer-explorer.vercel.app/contract/0xE6f6C5130452312A83eB32883fe223271EF2517B" target="_blank" rel="noopener">
+          <div class="t">Studionet explorer</div>
+          <div class="d">the live GVO contract — claims, consensus, events</div>
+          <div class="u">genlayer-explorer.vercel.app/contract/0xE6f6…517B</div>
+        </a>
+        <a class="linkcard" href="https://github.com/faisalnugroho/genlayer-verification-oracle#readme" target="_blank" rel="noopener">
+          <div class="t">README</div>
+          <div class="d">full documentation — paths, appeal clock, tests</div>
+          <div class="u">…/genlayer-verification-oracle#readme</div>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ LIMITATIONS ══════════════════ -->
+<section id="limits">
+  <div class="wrap">
+    <div class="eyebrow">08 · Honest limitations</div>
+    <h2>What GVO does <span style="background:linear-gradient(90deg,#ff5470,#ff00e6);-webkit-background-clip:text;background-clip:text">not</span> promise</h2>
+    <p class="lede">Stated plainly, from the README — because a trust layer that overclaims is worse than no trust layer:</p>
+    <div class="lims">
+      <div class="lim"><div class="lt">Evidence URL trust (Path A)</div><p>GVO fetches whatever URL is supplied; it cannot detect content that changed after submission. Use immutable evidence (permanent gist / IPFS / archived link) where possible.</p></div>
+      <div class="lim"><div class="lt">Base RPC availability (Path B)</div><p>Payment verification depends on the public Base RPC endpoint. If it is unreachable, the gate fails closed (verdict false) — GVO never approves a payment it cannot verify.</p></div>
+      <div class="lim"><div class="lt">Appeal window clock</div><p>Wall-clock seconds against the node-assigned transaction timestamp (the non-manipulable primitive GenVM v0.2.16 exposes — there is no <code style="white-space:normal">gl.block.timestamp</code>). If a node ever failed to assign one, the parse reverts (fail closed), never silently approves.</p></div>
+      <div class="lim"><div class="lt">Value transfers</div><p><code style="white-space:normal">emit_transfer</code> emits a child value message; if the child transaction fails, value is not auto-returned. Withdrawals clear bookkeeping before emitting (checks-effects-interactions).</p></div>
+      <div class="lim"><div class="lt">Not an escrow</div><p>GVO holds appeal stakes and pays refunds/rewards, but does not escrow the disputed amounts themselves — it is a judgment layer, not a custodian.</p></div>
+      <div class="lim"><div class="lt">Free in v1</div><p>Submitting claims is free while the relay is rate-limited (5 / IP / 10 min). A fee model (Dev Fee) is future work, not a promise.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div class="l">
+      <b>GENLAYER VERIFICATION ORACLE</b> — it's infrastructure, not an app.<br/>
+      MIT License · contract 0xE6f6…517B · Studionet id 61999
+    </div>
+    <div class="r">
+      <a href="https://github.com/faisalnugroho/genlayer-verification-oracle" target="_blank" rel="noopener">GITHUB</a>
+      <a href="https://genlayer-explorer.vercel.app/contract/0xE6f6C5130452312A83eB32883fe223271EF2517B" target="_blank" rel="noopener">EXPLORER</a>
+      <a href="#reproduce">REPRODUCE</a>
+    </div>
+  </div>
+</footer>
+
+</main>
 
 <script>
+/* ============================================================
+   GVO frontend — same-origin API via /api proxy (Vercel edge).
+   Fallbacks: direct backend tunnel, then demo data (marked).
+   ============================================================ */
 const GVO_ADDRESS = "0xE6f6C5130452312A83eB32883fe223271EF2517B";
-const API_BASE = window.__config__?.apiBase ??
-  (location.protocol === "file:" ? "http://127.0.0.1:8000" : "");
+const EXPLORER_TX = "https://genlayer-explorer.vercel.app/tx/";
 
-document.getElementById("contractAddr").textContent = "Smart Contract (live): " + GVO_ADDRESS;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function setMetric(id, v) {
-  const el = document.getElementById(id);
-  el.textContent = String(v ?? "—");
-  el.style.fontSize = "20px";
-  el.style.fontWeight = "650";
-  el.style.marginTop = "4px";
+let API_BASE = "/api/v1";     // same-origin edge proxy (primary)
+let API_MODE = "live";        // live | demo
+let claimsCache = [];
+let filterStatus = "";
+
+/* ---------- fetch with fallbacks ---------- */
+async function apiGet(path, timeoutMs = 15000) {
+  const bases = ["/api/v1"];  // edge proxy only; tunnel is an internal detail
+  let lastErr;
+  for (const base of bases) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(base + path, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) throw new Error(path + " -> " + r.status);
+      return await r.json();
+    } catch (e) { clearTimeout(t); lastErr = e; }
+  }
+  throw lastErr;
 }
 
-async function getJSON(p) {
-  const r = await fetch(API_BASE + p);
-  if (!r.ok) throw new Error(p + " -> " + r.status);
-  return r.json();
+async function apiPost(path, body) {
+  const r = await fetch("/api/v1" + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await r.json(); } catch {}
+  if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+  return data;
 }
 
-async function load() {
+/* ---------- demo data (clearly marked) ---------- */
+const DEMO_CLAIMS = [
+  { claim_id: 3, category: "x402-usdc", status: "pending", verdict: "", description: "A $0.002 USDC payment was made on Base for the demo service.", reasoning: "", tx_hash: "0xabc…", payer: "0x…", recipient: "0x…", amount: "2000" },
+  { claim_id: 2, category: "x402-usdc", status: "resolved", verdict: "false", description: "Payment of 3000 base units claimed (actual transfer was 2000).", reasoning: "on-chain payment facts do not match claim: no USDC transfer matches claimed payer/recipient/amount" },
+  { claim_id: 1, category: "x402-usdc", status: "final", verdict: "true", description: "A $0.002 USDC payment was made on Base as consideration for the demo service.", reasoning: "USDC transfer verified on Base (exact match, 5+ confirmations); evidence describes the service paid for." },
+];
+
+/* ---------- render ---------- */
+function setStat(id, v) { $(id).textContent = (v === null || v === undefined) ? "—" : String(v); }
+
+async function loadStats() {
   try {
-    const r = await getJSON("/api/v1/stats");
-    const s = r.data || {};
-    setMetric("m_claim_count", s.total_claims);
-    setMetric("m_total_resolved", s.total_resolved);
-    setMetric("m_total_appeals", s.total_appeals);
-    setMetric("m_approval_rate", s.approval_rate);
+    const s = (await apiGet("/stats")).data || {};
+    setStat("m_claims", s.total_claims);
+    setStat("m_resolved", s.total_resolved);
+    setStat("m_appeals", s.total_appeals);
+    const ar = s.approval_rate;
+    setStat("m_approval", ar === undefined || ar === "" ? "—" : ar + "%");
+    API_MODE = "live";
   } catch (e) {
-    setMetric("m_claim_count", "offline");
-    setMetric("m_total_resolved", "—");
-    setMetric("m_total_appeals", "—");
-    setMetric("m_approval_rate", "—");
-    document.getElementById("contractAddr").textContent =
-      "backend offline — data not loaded (error: " + e.message + ")";
-    document.getElementById("claimsStatus").textContent = "backend not reachable";
+    API_MODE = "demo";
+    setStat("m_claims", "3");
+    setStat("m_resolved", "2");
+    setStat("m_appeals", "0");
+    setStat("m_approval", "50%");
+  }
+}
+
+async function loadClaims() {
+  const list = $("claimList");
+  try {
+    if (API_MODE === "demo") throw new Error("demo");
+    const r = await apiGet("/claims?page_size=100");
+    claimsCache = r.claims || [];
+    $("demoBadge").style.display = "none";
+    $("srcNote").textContent = "live from Studionet via the read API.";
+    $("srcNote").style.color = "var(--ok)";
+  } catch (e) {
+    claimsCache = DEMO_CLAIMS.slice();
+    $("demoBadge").style.display = "inline-block";
+    $("srcNote").textContent = "backend unreachable — demo data shown, clearly marked.";
+    $("srcNote").style.color = "#ffd76e";
+  }
+  renderClaims();
+}
+
+function verdictPill(c) {
+  if (c.status === "pending" || !c.verdict) return '<span class="pill vnone">no verdict yet</span>';
+  return c.verdict === "true"
+    ? '<span class="pill vtrue">VERDICT: TRUE</span>'
+    : '<span class="pill vfalse">VERDICT: FALSE</span>';
+}
+
+function renderClaims() {
+  const list = $("claimList");
+  const rows = claimsCache
+    .filter(c => !filterStatus || c.status === filterStatus)
+    .sort((a, b) => (b.claim_id || 0) - (a.claim_id || 0));
+  $("consoleCount").textContent = rows.length + " claim" + (rows.length === 1 ? "" : "s");
+
+  if (!rows.length) {
+    list.innerHTML = '<div style="color:var(--dim2);font:400 13px/1.8 var(--mono)">no claims match this filter</div>';
     return;
   }
 
-  try {
-    const r = await getJSON("/api/v1/claims?page_size=200");
-    const rows = r.claims || [];
-    const tb = document.querySelector("#claimsTable tbody");
-    tb.innerHTML = "";
-    rows.forEach(function (c) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${c.claim_id}</td><td>${c.category}</td><td><span class="pill">${c.status}</span></td><td>${c.verdict}</td><td>${c.description}</td>`;
-      tb.appendChild(tr);
-    });
-    document.getElementById("claimsStatus").textContent = `${rows.length} claims loaded`;
-  } catch (e) {
-    document.getElementById("claimsStatus").textContent =
-      "claims error: " + e.message;
-  }
-
-  document.getElementById("newClaim").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const fields = Object.fromEntries(fd.entries());
-    const body = {
-      category: fields.category || "",
-      description: fields.description || "",
-      criteria: fields.criteria || "",
-      evidence_url: fields.evidence_url || "",
-      tx_hash: fields.tx_hash || "",
-      payer: fields.payer || "",
-      recipient: fields.recipient || "",
-      amount: fields.amount || "",
-    };
-    try {
-      const resp = await fetch(API_BASE + "/api/v1/relay/submit", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data.detail || String(resp.status));
-      document.getElementById("claimsStatus").textContent =
-        "claim #" + (data.claim_id ?? "?") + " posted (tx " + (data.tx_hash || "").slice(0, 18) + "…) — waiting for indexer refresh";
-      setTimeout(load, 8000);
-    } catch (err) {
-      document.getElementById("req").textContent = "submit failed: " + err.message;
+  list.innerHTML = rows.map(c => {
+    const id = Number(c.claim_id) || 0;
+    const actions = [];
+    if (c.status === "pending") {
+      actions.push(`<button class="chip mgc" data-act="resolve" data-id="${id}">RESOLVE ▶ run consensus</button>`);
+    } else if (c.status === "resolved") {
+      actions.push(`<button class="chip" data-act="finalize" data-id="${id}">FINALIZE ▶ close appeal window</button>`);
+      actions.push(`<span class="chip" style="cursor:default">appeal via <code>appeal_claim</code> (needs stake)</span>`);
     }
-  });
+    const pay = (c.tx_hash && c.tx_hash !== "0x…")
+      ? `<span>tx ${esc(String(c.tx_hash).slice(0, 12))}… · ${esc(c.amount || "?")} units</span>` : "";
+    const txLink = c.tx_hash && c.tx_hash.startsWith("0x") && c.tx_hash.length > 20
+      ? `<a href="${EXPLORER_TX}${esc(c.tx_hash)}" target="_blank" rel="noopener">[tx on explorer]</a>` : "";
+    return `
+    <div class="claim">
+      <div class="claim-head">
+        <span class="claim-id">#${id}</span>
+        <span class="claim-cat">${esc(c.category)}</span>
+        <span class="pill ${esc(c.status)}">${esc(String(c.status).toUpperCase())}</span>
+        ${verdictPill(c)}
+      </div>
+      <p class="claim-desc">${esc(c.description)}</p>
+      ${c.reasoning ? `<p class="claim-reason">» ${esc(c.reasoning)}</p>` : ""}
+      <div class="claim-meta">
+        ${pay}
+        ${txLink}
+        <span>mirror: ${esc(c.updated_at ? String(c.updated_at).replace("T"," ").slice(0,19) : "—")} UTC</span>
+      </div>
+      ${actions.length ? `<div class="claim-actions">${actions.join("")}</div>` : ""}
+    </div>`;
+  }).join("");
 }
-load();
+
+/* ---------- claim actions (relay resolve / finalize) ---------- */
+function readout(el, html) {
+  el.innerHTML = html;
+  el.classList.add("show");
+}
+
+async function claimAction(act, id) {
+  const btn = document.querySelector(`button[data-act="${act}"][data-id="${id}"]`);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span>${act === "resolve" ? "running consensus…" : "finalizing…"}`; }
+  const out = $("formOut");
+  try {
+    const r = await apiPost(`/relay/${act}`, { claim_id: id });
+    if (act === "resolve") {
+      const v = r.verdict === null || r.verdict === undefined ? "see browser" : (r.verdict ? "TRUE" : "FALSE");
+      readout(out,
+        `<span class="ok">✔ claim #${id} resolved — verdict: ${v}</span>\n` +
+        `tx: <a href="${EXPLORER_TX}${esc(r.tx_hash)}" target="_blank" rel="noopener">${esc(r.tx_hash)}</a>\n` +
+        `<span class="cy">the browser below refreshes with the verdict + reasoning. (indexer polls every ~2 min)</span>`);
+    } else {
+      readout(out,
+        `<span class="ok">✔ claim #${id} finalized — status: FINAL</span>\n` +
+        `tx: <a href="${EXPLORER_TX}${esc(r.tx_hash)}" target="_blank" rel="noopener">${esc(r.tx_hash)}</a>`);
+    }
+    setTimeout(() => { loadClaims(); loadStats(); }, 3000);
+    setTimeout(() => { loadClaims(); loadStats(); }, 30000);
+    setTimeout(() => { loadClaims(); loadStats(); }, 90000);
+  } catch (e) {
+    readout(out, `<span class="err">✖ ${act} failed for claim #${id}:</span> ${esc(e.message)}\n` +
+      (String(e.message).includes("window") || String(e.message).includes("revert")
+        ? `<span class="cy">the appeal window (3600 s) may still be open — that guard is the contract working as designed.</span>` : ""));
+    if (btn) { btn.disabled = false; btn.textContent = act === "resolve" ? "RESOLVE ▶ run consensus" : "FINALIZE ▶ close appeal window"; }
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-act]");
+  if (b) claimAction(b.dataset.act, Number(b.dataset.id));
+});
+
+/* ---------- filters ---------- */
+$("filters").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-status]");
+  if (!b) return;
+  filterStatus = b.dataset.status;
+  document.querySelectorAll("#filters .chip").forEach(c => c.classList.toggle("on", c === b));
+  renderClaims();
+});
+
+/* ---------- submit form ---------- */
+$("claimForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const btn = $("submitBtn");
+  const out = $("formOut");
+  const body = {
+    category: f.category.value.trim(),
+    description: f.description.value.trim(),
+    criteria: f.criteria.value.trim(),
+    evidence_url: f.evidence_url.value.trim(),
+    tx_hash: f.tx.value.trim(),
+    payer: f.payer.value.trim(),
+    recipient: f.recipient.value.trim(),
+    amount: f.amount.value.trim(),
+  };
+  if (!body.category || !body.description || !body.criteria || !body.evidence_url) {
+    readout(out, '<span class="err">✖ category, description, criteria and evidence_url are required.</span>');
+    return;
+  }
+  const pathB = !!body.tx_hash;
+  if (pathB && (!body.payer || !body.recipient || !body.amount)) {
+    readout(out, '<span class="err">✖ Path B (tx_hash present) also needs payer, recipient and amount.</span>');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>relaying tx…';
+  readout(out, '<span class="cy">submitting via relay — the backend signs and sends submit_claim to Studionet (consensus can take ~1 min)…</span>');
+  try {
+    const r = await apiPost("/relay/submit", body);
+    readout(out,
+      `<span class="ok">✔ accepted — claim #${r.claim_id ?? "?"} (path ${pathB ? "B · on-chain USDC gate" : "A · evidence-only"})</span>\n` +
+      `tx: <a href="${EXPLORER_TX}${esc(r.tx_hash)}" target="_blank" rel="noopener">${esc(r.tx_hash)}</a>\n` +
+      `<span class="cy">now scroll to the claim browser, wait for it to appear (status PENDING), then press RESOLVE to reproduce the verdict.</span>`);
+    f.reset();
+    setTimeout(() => { loadClaims(); loadStats(); }, 5000);
+    setTimeout(() => { loadClaims(); loadStats(); }, 30000);
+    setTimeout(() => { loadClaims(); loadStats(); }, 90000);
+  } catch (e) {
+    readout(out, `<span class="err">✖ submit failed:</span> ${esc(e.message)}` +
+      (String(e.message).includes("rate limit")
+        ? '\n<span class="cy">the relay is rate-limited (5 / IP / 10 min) — wait for the window to reset.</span>' : ""));
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Submit claim <span class="arr">▶</span>';
+  }
+});
+
+/* ---------- copy buttons ---------- */
+document.addEventListener("click", (ev) => {
+  const c = ev.target.closest(".copy");
+  if (!c) return;
+  const txt = c.dataset.copy;
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject())
+    .then(() => { c.textContent = "COPIED ✔"; setTimeout(() => c.textContent = "COPY", 1400); })
+    .catch(() => { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); c.textContent = "COPIED ✔"; setTimeout(() => c.textContent = "COPY", 1400); });
+});
+
+/* ---------- net badge + boot ---------- */
+(async function boot() {
+  try {
+    const h = await apiGet("/health", 8000);
+    if (h.status === "ok") {
+      $("netBadge").textContent = "LIVE ON STUDIONET · CHAIN ID 61999 · API ONLINE";
+      if (h.relay_account) {
+        $("relayAddr").textContent = h.relay_account;
+      }
+    }
+  } catch (e) {
+    $("netBadge").textContent = "CONTRACT LIVE ON STUDIONET · API OFFLINE (demo data)";
+  }
+  await loadStats();
+  await loadClaims();
+})();
 </script>
 </body>
 </html>

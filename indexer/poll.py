@@ -164,16 +164,27 @@ def main():
 
     oneshot = os.environ.get("ONESHOT", "0") == "1"
     log(f"indexing contract {GVO_ADDRESS} every {POLL_SECONDS}s (oneshot={oneshot})")
+    # Adaptive backoff: Studionet enforces 500 gen_call/hour per IP. A full
+    # snapshot costs (2 + N claims) calls. On a rate-limit error we multiply
+    # the sleep by 2 (capped at 30 min) and slowly recover afterwards, so the
+    # indexer never hammers the RPC into a permanent 429 loop.
+    backoff = 1.0
     while True:
         try:
             claims, stats = fetch_snapshot(client)
             n = upsert(conn, claims, stats)
             log(f"mirrored {n} claims; stats={str(stats)[:120]}")
+            if backoff > 1.0:
+                backoff = max(1.0, backoff / 2)
         except Exception as e:
-            log(f"poll error: {e}")
+            msg = str(e)
+            log(f"poll error: {msg}")
+            if "Rate limit" in msg or "-32029" in msg:
+                backoff = min(backoff * 2, 1800)
+                log(f"rate-limited by RPC — backing off {int(backoff)}s")
         if oneshot:
             break
-        time.sleep(POLL_SECONDS)
+        time.sleep(max(POLL_SECONDS, int(POLL_SECONDS * backoff)))
 
 
 if __name__ == "__main__":
