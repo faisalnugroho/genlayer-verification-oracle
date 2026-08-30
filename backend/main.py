@@ -243,7 +243,16 @@ def relay_submit(body: SubmitClaimBody, request: Request):
     The backend signs with its own funded account (gas is spent by the relay
     account, hence the rate limit). Returns the new claim_id and tx hash.
     """
-    client_ip = request.client.host if request.client else "unknown"
+    # Behind a reverse proxy / tunnel chain (nginx -> cloudflared tunnel ->
+    # Cloudflare edge -> Vercel edge proxy), the socket peer is always the
+    # proxy. The FIRST X-Forwarded-For entry is the original client IP.
+    def _client_ip(request: Request) -> str:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()
+        return request.client.host if request.client else "unknown"
+
+    client_ip = _client_ip(request)
     if not RATE_LIMITER.allow(client_ip):
         raise HTTPException(
             status_code=429,
